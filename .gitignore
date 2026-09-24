@@ -1,12 +1,28 @@
 # 凭据不入库
 .env
+.env.*
+!.env.example
 
 # 运行产物（证据包是输出，不回写文档；按任务归档，不入版本库）
 runs/
 data/imports/
+artifacts/
 
 # Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# 本地工具与编辑器
+.idea/
+.vscode/
