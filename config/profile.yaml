@@ -1,0 +1,260 @@
+# ============================================================
+# 业务背景 Profile（当前生效）
+#
+# 定位：本文件是「公司 / 业务背景层」的唯一配置入口。
+# 核心代码与 docs 通用层**不得内置任何公司特定值** —— 换公司、换业务线时，
+# 只需复制本文件、改参数、切换指针，不改一行核心逻辑（ADR-018）。
+#
+# 迁移方式：
+#   1. 复制本文件到 config/profiles/<new-profile-id>.yaml 并修改参数
+#   2. 把本文件替换为新 profile 内容，或改 profile_id 指向
+#   3. 核心模块只读取「当前生效 profile」，不感知是哪家公司
+#
+# 约束：本文件只放**参数值**；口径的定义、公式、理由仍在 docs/ 单源维护，
+#       本文件通过 source 字段指向对应条目，不复制正文（守则 2 / 守则 8）。
+# ============================================================
+
+profile_id: default
+profile_name: 跨境电商 · 便携储能（当前业务背景）
+created_at: 2026-09-22
+updated_at: 2026-09-24          # ADR-067：核心与场景解耦
+status: draft    # draft | active | archived（仍未实跑校准，实跑后转 active）
+
+# ---------- 1. 币种与汇率 ----------
+currency:
+  base: CNY                      # 记账本位币
+  fx_source: mysql_table         # mysql_table | file
+  fx_table: exchange_rate        # fx_source=mysql_table 时生效
+  fx_rule: N_plus_1              # N_plus_1：M 月报告用 M+1 月汇率
+  fx_fallback: same_month        # M+1 不存在时回退到 M 月当月汇率
+  fx_missing_action: error       # 仍缺失则报错，禁止用其他月份或实时汇率顶替
+  keep_original: true            # 原币四元组双留档
+  source: docs/20-domain/metrics.md#G-01-G-02
+
+# ---------- 2. 数据源与平台 ----------
+datasource:
+  default_mode: mysql            # 权威默认值（ADR-001；不在 .env 中重复定义）
+  platforms:                     # 首期接入范围（ADR-015）
+    - shopify
+  reserved_platforms:            # 官方口径已登记、暂未接入
+    - amazon
+  # 首期白名单：**仅此 8 张可读**（R-41 / ADR-027 + ADR-028）。扩大须另立 ADR。
+  first_phase_whitelist:
+    - shopify_sales_by_order     # 销售事实
+    - refunds_lineitems          # 退款行项（官方 API 活表，非 mongo）
+    - refunds_adjustments        # 退款差额 = Shopify OrderAdjustment
+    - market_goal                # 目标（年月 × 站点，CNY 万元）
+    - exchange_rate              # 汇率（N+1）
+    - month_basic_data           # GA4 漏斗（视图）
+    - 产品型号度数范围            # 度数区间维度
+    - nssku对应映射表             # SKU → NSSKU
+  first_phase_excluded:          # 权威但首期不启用（后续需用时另立 ADR）
+    - shopify_customers_by_site  # 新老客字段主表已含，无需此表
+    - repurchase_user_sku_stats
+  # ⚠ 禁用（非"不启用"）：shopify_orders_mongo / _refunds / _total —— mongo 系列（R-28 / R-36）
+  #    判别：表名含 orders_mongo → 禁用；refunds_ 开头且不含 mongo → 官方 API 表（可用）
+  ignore_list:                   # 用户明确「不需要理会」
+    - market_goal_bonus
+  facts_schema: bluetti_new      # ADR-056：事实表所在 schema；禁止写进核心代码
+  dims_schema: shared_data       # ADR-056：维表 / 汇率 / 映射所在 schema
+  source: docs/20-domain/data-sources.md#1
+
+# ---------- 3. 商品维度体系（公司特定！） ----------
+# 层级 = 店铺 SKU → NSSKU → 型号 → 品类/度数（G-19 / G-20）。金额原子 = 店铺 SKU（G-18）。
+# 单有效型号跟型号走；多有效型号进 kit_unallocated_bucket；无有效型号唯一 NS 降级到 NS。
+# 型号维 ASP 只对金额已进入该型号的行（model_asp_only_amount_entered，ADR-047 / M106）。
+# JOIN 键 = 产品型号；型号维对外呈现 = 产品型号_统一（ADR-048）。
+# 品类列 = 产品类型；度电带 = 度数范围整列；户储 = 该列取值「户储」标签（ADR-041～043）。
+# 禁止把 ns 前缀写成金额过滤器。
+dimensions:
+  amount_grain: 型号
+  amount_atomic: 店铺SKU
+  atomic_grain: NSSKU
+  shop_sku_field: 名称
+  product_primary_key: NSSKU
+  category_hangs_on: 型号
+  category_field: 产品类型
+  capacity_band_field: 度数范围
+  home_storage_field: 度数范围
+  home_storage_token: 户储
+  model_family_field: 产品型号_统一
+  model_join_field: 产品型号
+  model_display_field: 产品型号_统一
+  kit_unallocated_bucket: 套件未拆
+  amount_no_model_fallback: NSSKU
+  unmapped_bucket: 未映射
+  unmapped_multi_ns_annotate: true
+  model_asp_only_amount_entered: true
+  units_member_qty_field: 成员数量
+  units_member_qty_null_as: 1
+  units_dual_track: true
+  model_null_tokens:
+    - 配件
+  mapping_chain:
+    - platform_sku
+    - NSSKU
+    - 型号
+    - model_range
+    - category
+  mapping_tables:
+    platform_sku_to_nssku: nssku对应映射表
+    model_range: 产品型号度数范围
+  source: docs/20-domain/metrics.md#G-16-G-20-M106
+
+# ---------- 4. 收入与冲减 ----------
+revenue:
+  recognition_point: order_time  # order_time | ship_time | settle_time
+  refund_treatment: current_month_writeoff   # 发生月冲减，不回溯
+  cancel_treatment: exclude      # 取消单不计入订单数/件数/GMV
+  history_immutable: true        # 报告版本不可变（G-08）
+  order_key: order_name            # M103，ADR-049
+  versioning: partial_final      # 月内=partial，次月重生成=final，两版本并存
+  # 退款主口径（ADR-023）：整体=财务口径，商品维度拆解=计算口径
+  refund_caliber:
+    primary: financial           # financial | calculated | settled（R-27）
+    dimension_breakdown: calculated   # 差额不可归因，单列展示
+    primary_source: shopify_sales_by_order   # 官方 API 拉取的表
+    refund_sources: [refunds_lineitems, refunds_adjustments]
+    avoid_sources: [shopify_orders_mongo, shopify_orders_mongo_total]
+    join_keys: [shop_name, order_name]   # ADR-050
+    unmatched_skip_net_sales: true       # 未匹配不冲 M102
+  # 退款实现率对账（需读 shopify_orders_mongo_refunds.status，唯一能判断退款是否成功）
+  # 默认关闭 —— 主口径不依赖它；开启后仅用于报告对账区，不进净销售额计算（env 门控 / 守则 4）
+  refund_reconciliation:
+    enable_success_check: false
+    env_override: HARNESS_ENABLE_REFUND_RECONCILIATION   # env 未设置则以本默认值为准
+    source: shopify_orders_mongo_refunds
+    success_filter: "status='success' AND kind='refund'"
+  source: docs/20-domain/metrics.md#G-03-G-08-G-09-G-12-M102-M103
+  payment_status_filter: null          # ADR-052：不过滤；改过滤须另立 ADR
+  source_name_filter: null             # ADR-053：已转正草稿计入；不过滤
+  refund_reason_field: null            # ADR-051：不当 financialStatus
+
+# ---------- 5. 成本与费用 ----------
+# ⛔ 首期**不纳入设计范围**（ADR-027 决策二 / R-42）：不定义、不建模、不留空占位。
+# 以下仅为留档（ADR-012 已定口径），首期不读取、不计算。启用须另立 ADR。
+cost:
+  enabled: false
+  scope: out_of_first_phase    # out_of_first_phase | active
+  gmv_includes_shipping: false
+  cogs_components:               # COGS 构成（到岸成本法）
+    - purchase_cost
+    - inbound_freight
+    - customs_duty
+  treat_as_expense_not_cogs:
+    - fba_fulfillment
+    - last_mile
+    - warehousing
+  source: docs/20-domain/metrics.md#M201
+
+# ---------- 5b. 首期不纳入的指标（留档，不实现） ----------
+# R-42 / ADR-027 + ADR-058：以下指标首期**不纳入设计范围**，不定义、不建模、不留空占位。
+metrics_excluded_first_phase:
+  - M201   # 毛利
+  - M202   # 毛利率
+  - M203   # 平台佣金率
+  - M204   # 广告费率 / ACoS / TACoS（用户另确认广告部分暂不实现）
+  - M205   # 履约费率
+  - M206   # 仓储费率
+  - M208   # 净利（ADR-058）
+  - M209   # 净利率（ADR-058）
+
+# ---------- 6. 比率类口径 ----------
+ratios:
+  return_rate_mode: dual         # dual（金额+件数并列）| amount | quantity
+  conversion_rate_basis: ga4_transactions_per_session  # ADR-025/R-37：分子分母**同源取自 GA4**；禁止 GA4 sessions 配 Shopify 订单数
+  conversion_aux_ratios: [checkouts_per_session, ga4_vs_shopify_order_gap]  # 辅助 + 对账
+  conversion_source: month_basic_data   # GA4 视图（8,149 行，2025-06 起）
+  source: docs/20-domain/metrics.md#M207-M210
+
+# ---------- 7. 目标 ----------
+targets:
+  table_origin: user_table       # 目标来自 DB 表
+  dimensions: [month, site]      # ADR-020：无品类
+  metric: net_revenue            # 口径=净销售额，与达成率实际值一致
+  missing_action: report_missing # 禁止父级目标下推填充
+  source: docs/20-domain/data-sources.md#5.1b
+
+# ---------- 8. 客户分层 ----------
+customer:
+  enabled: true
+  identity_key: shopify_customer_gid   # ADR-062 / R-35；禁止 customer_id
+  unidentified_bucket: true      # 空 gid 归「未识别」，禁止计入新客
+  quality_metric: M507           # 顾客可识别率
+  source: docs/20-domain/metrics.md#M501-M507
+
+# ---------- 9. 大促日历（R-12 / R-70，市场特定） ----------
+promo_calendar:
+  enabled: false                 # 2026-09-22 用户确认暂不提供大促日历
+  events: []                     # 待补：如 black_friday / cyber_monday / prime_day
+  rule: 有日历时判定异动前必须先标促销窗口；无日历不阻断规模
+  missing_behavior: annotate_not_block  # ADR-054 / R-70：标 calendar_missing，禁止整报失败
+  source: docs/30-constraints/rules.md#R-12
+
+# ---------- 10. 报告 ----------
+report:
+  language: zh-CN
+  formats: [markdown, html_charts]
+  audience: 经营分析 / 管理层
+  annotation_layered: true          # G-21 / ADR-050：P0 优先，禁止堆砌
+  timezone: UTC                     # ADR-055 / G-04
+  calendar: natural_month           # ADR-055 / G-05；禁止 4-5-4
+  date_field: sale_date             # R-34
+  c1_c2_auto_same_template: true    # ADR-057：同 playbook 同口径首次放行后自动
+  c3_always: true                   # ADR-057：C3 每次都审
+  source: docs/20-domain/metrics.md#G-04-G-05-G-21
+
+# ---------- 11. 同比冷启动（ADR-059 / R-74） ----------
+yoy:
+  min_complete_months: 12           # 完整月数小于此值不出 M302
+  new_site_label: 新站
+  rollup: same_store                # 合计同比只含够龄站
+  source: docs/20-domain/metrics.md#M302
+
+# ---------- 12. 站点 / 市场（ADR-060 / ADR-061 / G-22 / R-75） ----------
+# 站点 = 销售表 site。市场 = 站点分组。site=EU 不是欧盟市场。
+# 「欧盟」= 泛欧经营区（含 UA），不是欧盟成员国清单。UK 不进该组。
+markets:
+  groups:
+    欧盟: [EU, DE, FR, IT, ES, IE, UA]
+  ungrouped_bucket: 未分组
+  source: docs/20-domain/metrics.md#G-22
+
+# ---------- 13. 量价拆解（ADR-063 / R-77） ----------
+volume_price:
+  qty_grain: shop_sku            # M104 ①；禁止 nssku
+  price: site_asp                # M102 / M104 ①
+  residual: show                 # 残差单列
+  source: docs/20-domain/metrics.md#M401
+
+# ---------- 14. 维度贡献度（ADR-064 / R-78） ----------
+attribution:
+  metric: M102
+  dimensions: [site, category, capacity_band, customer_segment]
+  required_buckets: [套件未拆, 未映射, 未识别]
+  weight: amount                 # 禁止 nssku_qty
+  source: docs/20-domain/metrics.md#M402
+
+# ---------- 15. SQL 安全（ADR-065 / R-04 / R-79） ----------
+sql_safety:
+  monthly_require_time_window: true
+  monthly_require_limit: false
+  adhoc_require_limit: true
+  source: docs/30-constraints/rules.md#R-04
+
+# ---------- 16. 记忆层（ADR-066 / R-80） ----------
+memory:
+  caliber: docs_and_profile
+  errors: errors_index
+  episodes: runs
+  session: disabled              # 预留
+  vector: disabled               # 预留
+  prior_metrics_as_facts: false
+  source: docs/10-architecture.md#10
+
+# ---------- 17. 入口（ADR-067 / R-82） ----------
+entrypoints:
+  run_playbook: true
+  ask: true
+  ask_alias_of_monthly: false
+  source: docs/10-architecture.md#13
