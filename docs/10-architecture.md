@@ -1,7 +1,7 @@
 # 10 · 架构与模块职责（唯一定义处）
 
 > 唯一职责：定义架构与模块职责。本文件是架构事实的唯一来源，`PROJECT_STATUS.md` 第 2 节只做链接引用。
-> 版本 v0.4 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（能力层为「已规划·未实现」；S0 代码未开工）。ADR-029 写入已撤回（ADR-030）。产品化分期见 ADR-066；核心与场景解耦见 ADR-067；跨平台 canonical 内核、TikTok 首阶段接入与生产运行契约见 ADR-068。
+> 版本 v0.5 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（能力层为「已规划·未实现」；S0 代码未开工）。ADR-029 写入已撤回（ADR-030）。产品化分期见 ADR-066；核心与场景解耦见 ADR-067；跨平台 canonical 见 ADR-068；动态平台与生产契约冻结见 ADR-069。
 
 ## 1. 分层
 
@@ -92,9 +92,9 @@ Skill 本身不含公司特定值，需要参数时从 `config/profile.yaml` 读
 |---|---|---|---|
 | C1 | `plan.md` | 每个引用指标能在 `metrics.md` 找到条目；数据源可解析出 manifest。**同 playbook + 同口径版本首次放行后可自动放行**（ADR-057） | 回炉重规划 |
 | C2 | 原料 SQL（不含派生） | 只读、行数上限内、字段与口径映射匹配。**同上，首次放行后可自动**（ADR-057） | 阻断执行 |
-| C3 | 报告 + 证据包 | rubric 四项通过 + 与源数据对账一致 | 落 `errors/E-NNNN`，修复后重跑 |
+| C3 | 封存候选包 hash + Evaluator 结果 | 全部适用 rubric 通过 + 与源数据对账一致 | 驳回后生成新 revision；确认是新错误家族才落 `errors/E-NNNN` |
 
-**自动放行**：派生 groupby、透视、同比环比、格式化、图表渲染 —— 全量留档，事后按 C3 追溯。同模板同口径的 C1/C2 重跑亦自动放行（ADR-057），计划和 SQL 仍留档。**C3 每次都审。**
+**自动放行**：派生 groupby、透视、同比环比、格式化、图表渲染 —— 全量留档，事后按 C3 追溯。C1/C2 仅在各自指纹完全一致时复用，计划和 SQL 仍留档；平台集合变化使 C1 失效，未变化的平台组件可复用 C2。**C3 每个候选包每次都审。**
 
 ## 6. 目录结构（按稳定接口演进）
 
@@ -232,7 +232,7 @@ SK-03 与 SK-05 可直接从 ima 知识库资产翻译：`20260327_大促对AB�
 
 | 切片 | 目标 | 做 | 不做 | 完成判据 |
 |---|---|---|---|---|
-| **S0 骨架** | 产品外壳可启动 | contracts + typed registry；CLI `run --playbook`、`ask`、`playbooks`、`--help`；机器可读 fixture manifest；Run 状态机 / ErrorEnvelope / Artifact Envelope；预留槽 no-op Port；policy / memory / trace | 业务 SQL、真库、把 ask 做成 monthly 别名、为未来平台铺空目录 | 无凭据启动不崩；`ask` 无 LLM 时显式 no-op；非月报 fixture 可加载；无效状态迁移/manifest 被拒绝 |
+| **S0 骨架** | 产品外壳可启动 | contracts + typed registry；CLI `run --playbook`、`ask`、`playbooks`、`--help`；Playbook/Rule Pack/Plan DAG/Metric availability 机器契约；Run/Error/Artifact/Trace envelope；预留槽 no-op Port；policy / memory / trace | 业务 SQL、真库、把 ask 做成 monthly 别名、为未来平台铺空目录 | 无凭据启动不崩；`ask` 无 LLM 时显式 no-op；非月报双分支 fixture 可加载；unsupported 分支进入 alignment 且独立分支继续；无效状态迁移/manifest 被拒绝 |
 | **S1 接入** | 两平台快照可复现 | mysql + files 双通道；Shopify/TikTok adapter；canonical schema；逐源 manifest + schema/hash/watermark；capability matrix；PII 默认拒绝 | 指标计算、Affiliate/LIVE 结论 | 无凭据显式报错且不降级；两平台均产出 canonical 合同样本；PII 不进入工件 |
 | **S2 执行** | 原料 SQL 受控 | SQL AST 只读护栏；rule-pack scope；月报时间窗（R-79）；ad-hoc LIMIT（R-04）；完整审批指纹；分支 `awaiting_alignment` | 归因技能 | 无时间窗月报 SQL、ad-hoc 无 LIMIT、错 scope 规则均被阻断；独立分支可继续留证据 |
 | **S3 规模效率** | 跨平台 canonical 出数 | MetricRegistry；M101–M106/M207；Shopify/TikTok 映射与覆盖率；platform-native 指标隔离；provisional/diagnostic 状态 | 把指标写死在编排器；强行补齐缺能力 | 两平台统一总览可复算；TikTok 样品/取消/赠品/退款断言通过；未映射商品进桶 |
@@ -294,15 +294,17 @@ canonical 是平台事实的最小公共语言，不是把所有平台字段塞�
 
 | 实体 / 事件 | 必需键 | 核心字段 | 说明 |
 |---|---|---|---|
-| `OrderFact` | `platform + shop_id + order_id` | created/paid/cancelled、currency、status、is_sample | 同时保留多事件时间；指标自行声明 recognition event |
-| `OrderLineFact` | 上述 + `line_item_id` | platform_sku、quantity、商品金额、discount、is_gift | 金额/件数粒度显式，不靠表名推断 |
-| `RefundEvent` | `platform + shop_id + refund_id` | event_time、order_id、subtotal、shipping、tax、status | 商品净销售额只冲 subtotal；取消退款不得重复冲减 |
-| `RefundLineEvent` | refund + line item | platform_sku、quantity、subtotal | 支撑商品归因与退货率 |
-| `ProductIdentity` | platform_sku | NSSKU、型号、品类、映射状态 | 未映射保留总账，维度进桶 |
-| `CustomerIdentity` | 平台/店铺命名空间 + hash | identity_quality | 默认不跨平台合并 |
+| `OrderFact` | `platform + account_id + order_id` | `order_created_date`、created/paid/cancelled、currency、status、is_sample | `account_id` 是平台账户/店铺原子；`order_created_date` 是报告期 canonical 字段，物理来源由 adapter 映射 |
+| `OrderLineFact` | 上述 + `line_item_id` | platform_sku、quantity、gross/discount/net、`is_sample/is_gift/is_commercial` | 金额/件数粒度与商业行显式，不靠金额为 0 或表名猜测 |
+| `RefundEvent` | `platform + account_id + refund_id` | event_time、order_id、`refund_kind`、subtotal、shipping、tax、status | `refund_kind` 至少区分 `line_refund/order_adjustment`；取消退款不得重复冲减 |
+| `RefundLineEvent` | refund + line item | platform_sku、`quantity?`、subtotal | quantity 可空；缺失时 `return_quantity` capability=unsupported，禁止以行数代件数 |
+| `ProductIdentity` | `platform + account_id + platform_sku` | NSSKU、型号、品类、映射状态 | 未映射保留总账，维度进桶 |
+| `CustomerIdentity` | 平台/账户命名空间 + hash | identity_quality | 默认不跨平台合并；无 identity capability 时实体可不生成 |
 | `TrafficFact` / `AttributionFact` | source-specific id | views/clicks/orders/native metrics | 只在 capability 存在时生成；原生归因不得冒充 canonical |
 
 adapter 输出必须包含 `adapter_id`、`contract_version`、`schema_fingerprint`、capability、覆盖期、水位、未映射字段、质量断言。原始表名只允许出现在 adapter 与 source manifest。
+
+经营组织层级与事实键分离：`platform + account_id` 永久保留；Profile 可把多个账户映射为 `reporting_site / market / region`。缺映射不影响商业总账，但该汇总维度进入可选能力对齐流程。任何跨平台指标与 SQL 只引用 canonical 字段，Shopify `sale_date`、TikTok `created_time` 等物理字段只存在于 adapter/platform pack。
 
 ## 15. 指标、规则与 Playbook 注册契约
 
@@ -321,24 +323,44 @@ adapter 输出必须包含 `adapter_id`、`contract_version`、`schema_fingerpri
 
 ### 15.3 Playbook manifest
 
-生产 Registry 只读取 `manifest.yaml`（或同 schema 的 JSON），不解析 Markdown。manifest 至少含：`id / contract_version / steps / metric_refs / skill_refs / rule_packs / required_capabilities / time_scope / outline / approval_policy / eval_overlays`。说明文档只解释“为什么”。
+生产 Registry 只读取 `manifest.yaml`（或同 schema 的 JSON），不解析 Markdown。manifest 至少含：`id / contract_version / platform_selection / core_capabilities / optional_capabilities / steps / metric_refs / metric_availability / skill_refs / rule_packs / time_scope / source_readiness / outline / approval_policy / eval_overlays`。`platform_selection=explicit` 时，交互 Run 必须提交非空 `target_platforms`，定时任务必须在调度配置中声明。说明文档只解释“为什么”。
 
 ## 16. 生产运行契约
 
-### 16.1 Run 状态机
+### 16.1 三个正交状态轴
 
-`created → planned → awaiting_c1 → snapshotting → awaiting_c2 → running ↔ awaiting_alignment → validating → awaiting_c3 → completed`。任意可运行态可进入 `cancel_requested → cancelled`；可恢复态从最后一个已提交 checkpoint 继续。`failed` 必须携带 `ErrorEnvelope`。同一 `run_id + step_id + input_fingerprint` 重试必须幂等。
+1. `run_status`：`created → planned → awaiting_c1 → snapshotting → awaiting_c2 → running → validating → rendering → sealing → evaluating → awaiting_c3 → completed`。活动态可进入 `cancel_requested → cancelled`；失败进入 `failed` 并携带 `ErrorEnvelope`；C3 驳回进入 `revision_required → planned`，递增 revision。
+2. `data_completeness`：`partial | final`。按本次 `target_platforms` 的核心源逐一检查报告期截止点、延迟窗口、watermark 与质量断言；迟到数据只生成新 revision/version。
+3. `report_tier`：`dry_run | formal_partial | formal_final`。draft Profile 或未认证 adapter 只能 dry-run；active 且核心契约完整、仅水位未齐可经 C3 发布 formal_partial；全部必需平台齐备方可 formal_final。
 
-### 16.2 Artifact Envelope 与逐源 manifest
+业务口径或核心能力存在未关闭 alignment ticket 时，只能 dry-run，禁止进入 C3。`awaiting_alignment` 主要是 **step/branch 状态**；Run 尚有可运行分支时保持 `running`，无可运行分支且 ticket 未关闭时 Run 才进入 `awaiting_alignment`，关闭后从 checkpoint 恢复。
 
-每个工件必须有 `artifact_id/type/schema_version/content_hash/producer/input_refs/created_at/classification`。`source_manifest.json` 顶层只做索引，`sources[]` 为每个平台/表/文件独立记录：连接逻辑标识、adapter/schema 版本、查询 hash、行数、时间范围、水位、快照 hash、完整度与 capability。多源不得只给一个整体 hash。
+### 16.2 Plan DAG 与 checkpoint
 
-### 16.3 审批、错误与配置
+`plan.md` 必须有 `plan_revision / target_platforms / steps[]`。每个 step 至少含 `step_id / type / depends_on / platform_scope / required_capabilities / metric_refs / rule_packs / on_unsupported / input_fingerprint`。`on_unsupported` 只允许 `await_alignment` 或已留用户 waiver 的 `skip_optional`；核心能力不得 waiver。
 
-- C1/C2 复用指纹 = org/profile + playbook manifest + metric/rule packs + adapter/schema + SQL template + source contract；任一变化即失效。
-- `ErrorEnvelope` 至少含 `code/category/severity/retryable/module_id/run_id/step_id/safe_message/cause_ref`，禁止把凭据或 PII塞进 message。
-- 配置必须有 `schema_version`、严格校验与 migration；`draft` profile 默认不可发布正式报告，只能 dry-run/partial。
-- Tool 声明 capability（network/db-read/file-write 等）；Policy 在调用前后检查。SQL 安全以 parser/AST 为准，不靠字符串黑名单。
+checkpoint 至少落在 `post_snapshot`、`post_c2_sql_archive`、每个 `post_step_artifact` 与 `sealed_candidate`。取消/失败恢复只能从已原子提交的 checkpoint 开始。同一 `run_id + plan_revision + step_id + input_fingerprint` 重试不得产生重复副作用。
+
+### 16.3 Artifact Envelope、候选包与 C3
+
+每个工件必须有 `artifact_id/type/schema_version/content_hash/producer/input_refs/created_at/classification/revision`。`classification` 至少枚举 `public/internal/confidential/restricted`。`source_manifest.json` 顶层只做索引，`sources[]` 为每个平台/账户/表/文件独立记录：连接逻辑标识、adapter/schema 版本、查询 hash、行数、时间范围、报告期截止点、延迟窗口、水位、快照 hash、完整度与 capability。多源不得只给一个整体 hash。
+
+执行过程持续原子写临时工件；Validator 与 Reporter 完成后进入 `sealing`，封存包含报告草稿、manifest、SQL/代码、参数、模型、断言与 trace 索引的不可变候选包并计算总 hash；Evaluator 只读该包；C3 审核对象即该 hash。通过后只追加发布记录/签名，不修改候选内容；驳回后的修复生成新 revision/hash。
+
+### 16.4 审批与组件认证
+
+- `caliber_fingerprint` = 当前引用 metric 定义 hash + 有效 rule-pack 内容 hash + playbook manifest/version + Profile 不可变版本 + adapter/schema contract + source contract + 会影响结果的 env override hash；敏感值不落明文。
+- C1 指纹另含 `target_platforms`、Plan DAG、大纲与 acceptance criteria；平台组合变化必须重审。
+- C2 按平台/step 记录组件指纹，可复用完全未变化的分支；新增或变化分支单独重审。审批记录必须含 `organization_id/profile_version/fingerprint/approver/approved_at/scope`，不得跨组织复用。
+- C3 每个候选包 hash 每次审核，不复用。
+- Profile 只有在校准 Run 的核心合同、对账与 Eval 全通过并显式批准后，才以新版本转 active。Adapter 按 `adapter_id + contract_version + schema_fingerprint + organization/profile` 独立认证；新增 adapter 不使已认证组件退回 draft。
+
+### 16.5 Error、Trace、配置与 SQL
+
+- `ErrorEnvelope` 至少含 `schema_version/code/category/severity/retryable/module_id/run_id/plan_revision/step_id/safe_message/cause_ref`。运行失败不等于必须新建 E-NNNN；只有出现可复发根因、口径/架构缺陷或需要防回归门禁时才归档错误档案。
+- `trace.jsonl` 每行固定 `schema_version/event_id/event_type/run_id/plan_revision/step_id/timestamp/input_refs/result_summary/duration_ms/classification`；事件类型至少含 state、tool、policy、llm、approval、artifact。默认只记 schema/hash/行数/摘要，禁止凭据、PII 和完整结果。
+- Profile/manifest/rule-pack/plan/envelope 均须有 `schema_version` 并严格校验。migration 只生成新版本，不原地覆写已被 Run 引用的配置；未知版本拒绝执行。
+- Tool 声明 capability（network/db-read/file-write 等），Policy 在调用前后检查。SQL 安全以 parser/AST 为准：拒绝多语句、DDL/DML、动态 `USE` 与非白名单 schema；月报时间窗检测 canonical `order_created_date` 的语义约束，adapter 再映射物理字段。
 
 ## 17. 安全与观测
 

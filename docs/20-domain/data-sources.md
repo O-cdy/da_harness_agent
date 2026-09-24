@@ -1,7 +1,7 @@
 # 20 · 数据源与接入配置（唯一定义处）
 
 > 唯一职责：定义数据源与接入配置。**本文件是数据源配置的唯一来源**，`harness/config/` 只读取本文件，不得在代码中硬编码默认值。
-> 版本 v0.4 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（§5.3/§5.4 为实测登记；平台白名单以 `data-audit.md` §8 为准）。Shopify 口径见 ADR-019～065；跨平台 canonical 与 TikTok 首阶段接入见 ADR-068。
+> 版本 v0.5 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（§5.3/§5.4 为实测登记；平台白名单以 `data-audit.md` §8 为准）。Shopify 口径见 ADR-019～065；跨平台 canonical 与 TikTok 首阶段接入见 ADR-068/069。
 
 ## 1. 默认接入模式（单源开关）
 
@@ -101,12 +101,16 @@ default_datasource_mode: mysql   # 可选值：mysql | file
   "manifest_version": "1.0",
   "mode": "mysql | file",
   "profile_id": "组织/profile",
+  "profile_version": "immutable version",
+  "target_platforms": ["..."],
   "metric_version": "metrics.md 的版本号",
   "data_completeness": "partial | final",
+  "report_tier": "dry_run | formal_partial | formal_final",
   "report_version": "v1 | v2 | ...（同报告月内递增，不可覆盖）",
   "sources": [{
     "source_id": "platform.table-or-file",
     "platform": "shopify | tiktok | ...",
+    "account_id": "canonical account namespace",
     "adapter_id": "adapter 标识",
     "adapter_contract_version": "semver",
     "schema_fingerprint": "hash",
@@ -115,17 +119,20 @@ default_datasource_mode: mysql   # 可选值：mysql | file
     "row_count": 0,
     "time_range": {"min": "ISO8601", "max": "ISO8601"},
     "watermark": "ISO8601",
+    "cutoff": "ISO8601",
+    "grace_window_hours": 0,
+    "readiness": "pending | ready | failed",
     "completeness": "partial | final",
     "capabilities": [],
+    "quality_checks": [{"check_id": "...", "status": "pass | fail"}],
     "unmapped_fields": []
   }],
   "fx": {"snapshot_hash": "hash", "rate_month": "YYYY-MM"}
 }
 ```
 
-`data_completeness = partial` 表示报告月尚未过完、数据不完整（汇率通常走回退）；`final` 表示次月重生成、数据完整且已能用 N+1 汇率（ADR-013）。
-**同报告月的 partial 与 final 版本并存**，重生成产出新 `report_version`，不覆盖旧版本。
-任一必需平台水位未到报告截止时间时，顶层只能是 `partial`，并在报告给出逐平台覆盖率；禁止用上期快照补齐（ADR-068 / R-93）。
+数据齐备按每个源的 `cutoff + grace_window + quality_checks` 判定，不以当前日期或单一最大时间字段代替。`data_completeness=partial` 表示至少一个目标平台必需源尚未 ready；`final` 表示全部目标平台必需源齐备。只有**单纯水位等待**可候选 `formal_partial`；质量断言失败仍须阻断。报告期有效金额缺 FX 不属于可等待水位，直接阻断 formal。grace window 尚未配置时进入 `awaiting_alignment`，不得自行猜测。
+**同报告月的 partial 与 final 版本并存**，迟到数据重生成新的不可变 `report_version`，不覆盖旧版本。formal 候选还必须经过封包后评估与当次 C3，且 Profile 为 active。禁止用上期快照补齐（ADR-069 / R-99～R-101）。
 
 ## 5. 字段 → 内部口径映射表
 
@@ -181,7 +188,7 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 
 | 字段 | 类型 | 用途 / 映射到内部指标 |
 |---|---|---|
-| `sale_date` | date | 销售归属日（ShopifyQL day）。**月份归属用本列**（R-34）。**报告期 = UTC 自然月**（ADR-055） |
+| `sale_date` | date | Shopify adapter 的物理销售归属日；映射为 canonical `order_created_date` 后才供跨平台月窗使用。核心/跨平台 SQL 禁止直接引用本列（ADR-069） |
 | `shop_name` / `site` / `shop_domain` | varchar | 店铺 / 站点（`COUNT(DISTINCT site)` = **21** @ 2026-09-24：AU/BR/CA/CL/DE/ES/EU/FR/IE/IT/JP/KR/MX/NG/NZ/PH/SA/UA/UK/US/ZA） |
 | `currency` | varchar | **原币币种**（15 种）→ 必须走 G-10 四元组双留档 |
 | `order_name` / `sku` / `quantity` | varchar/int | 订单号 / 销售 SKU / 件数 → M103 = `COUNT(DISTINCT order_name)`（ADR-049） / M104 |
@@ -199,11 +206,11 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 | `order_created_at` / `order_processed_at` | datetime | 下单时间（ADR-010 按下单时点） |
 | `dedup_fingerprint` | char(64) | MD5(sale_date\|shop_name\|order_name\|sku)，**已自带去重指纹** |
 
-**退款表 `bluetti_new.refunds_lineitems`**（46,509 行）：`refund_created_at`（**退款发生时间**）、`refund_subtotal`、`refund_totalTax`、`refund_quantity`、`currency`、`order_id`、`name`
+**退款表 `bluetti_new.refunds_lineitems`**（46,509 行）：`refund_created_at`（**退款发生时间**）、`refund_subtotal`、`refund_totalTax`、`refund_quantity`、`currency`、`order_id`、`name`。adapter 映射为 `refund_kind=line_refund`。
 
 > `payment_status` 不过滤（ADR-052）。已转正草稿计入、不按 `source_name` 过滤（ADR-053）。无日历不阻断规模（ADR-054）。报告期 UTC 自然月（ADR-055）。双库同一连接（ADR-056）。C1/C2 同指纹自动放行（ADR-057）。净利不纳入（ADR-058）。新站不参与同比（ADR-059）。站点 ≠ 市场（ADR-060）。UA 计入泛欧经营区（ADR-061）。新老客主键 gid（ADR-062）。行数以当日 `COUNT(*)` 为准。退款关联销售表已确认（ADR-050）。`financialStatus` 不当退款原因（ADR-051）。
 → **支持 ADR-010「退款在发生月冲减」**。实测存在跨月退款（下单 2026-03-12，退款 2026-04-20）。
-**`bluetti_new.refunds_adjustments`**（43,919 行）实测结构（2026-09-22 深挖，C-04 证据）：
+**`bluetti_new.refunds_adjustments`**（43,919 行）实测结构（2026-09-22 深挖，C-04 证据）：adapter 映射为 `refund_kind=order_adjustment`，与 line refund 分开留档后再按 M102 聚合。
 
 | `adjust_reason` | 行数 | 正 / 负 | 净额 |
 |---|---|---|---|
@@ -296,7 +303,7 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 
 | canonical | TikTok 来源 | 处理 |
 |---|---|---|
-| order key | `shop_id + order_id` | 再加 `platform=tiktok` 构成全局键 |
+| order key | `shop_id + order_id` | `shop_id` 映射 `account_id`；canonical 全局键=`platform + account_id + order_id` |
 | order created time | `created_time` | canonical 下单时点；`sale_date` 实测等于 paid date，不用于 M101–M104 时点 |
 | platform-native GMV time | `paid_time` | 仅 PN-TIKTOK-001 等原生指标 |
 | product key | `seller_sku` | 先统一字符排序/规范化，再接 NSSKU；158/166 命中，未命中进桶 |
@@ -305,7 +312,7 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 | quantity | `quantity` | 取消/样品/赠品不进商业 M104 |
 | gift/sample/cancel | `is_gift` / `is_sample_order` / `cancelled_time` 或取消事件 | 赠品保留单列；样品和取消筛除 |
 | refund event | `tiktok_returns.event_date` + `refund_subtotal` | 冲 M102；`refund_shipping_fee/refund_tax` 不进商品净额 |
-| refund item | `tiktok_return_items` | `order_line_item_id/sku_id/seller_sku` 仅作商品归因；无数量字段，M207b unsupported |
+| refund item | `tiktok_return_items` | `refund_kind=line_refund`；`order_line_item_id/sku_id/seller_sku` 仅作商品归因；无数量字段，`return_quantity` capability unsupported |
 | cancellation | `tiktok_cancellations` + `tiktok_cancel_items` | 用于剔除与诊断；其退款金额不得二次冲 M102 |
 | customer | 无可用 canonical capability | PII 字段与 raw_json 禁入；首阶段不算 TikTok M501–M507 |
 | Affiliate/LIVE | 对应两张原生表 | 只输出 platform-native；归因窗口按官方来源 |

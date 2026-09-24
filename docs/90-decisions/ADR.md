@@ -1381,3 +1381,33 @@ USD 单币种：46,257,435 / 2,182,040 → 4.72%
 **修订关系**：扩展 ADR-009/015/066/067；首阶段平台由“仅 Shopify”修订为“Shopify + TikTok”；ADR-027/028 的“8 张表”收窄为 **Shopify platform pack 白名单**，不再是 harness 全局白名单；ADR-049 的 `order_name` 收窄为 Shopify adapter 键，canonical 订单键由本 ADR 定义；R-41/R-81 已据此修订。未写 `harness/` 代码。
 
 **影响**：`00-charter.md`、`10-architecture.md`、`metrics.md`、`data-sources.md`、`data-audit.md`、playbooks、skills、`rules.md`、`eval-rubric.md`、`profile.yaml`、`PROJECT_STATUS.md`。
+
+---
+
+## ADR-069 · 2026-09-24 · 动态平台 Playbook + 生产契约冻结
+
+**背景**：ADR-068 已确立跨平台 canonical，但复核发现 S0 前仍有七类返工风险：月报规则残留 Shopify `sale_date`；Run 状态与 partial/final/正式等级混用；C3 先于证据包封存；Playbook/Rule Pack/Plan DAG 缺机器契约；退款 adjustment 无 canonical 类型；平台能力只在人读文档里分层；审批指纹未明确口径内容。用户要求逐项问答至可完整修复，经 17 轮单问题确认如下。
+
+**决策**：
+1. **报告三层严格隔离**：`draft` Profile 只可 `dry_run`；active Profile 在所选必需平台水位未齐时可经 C3 发布 `formal_partial`；全部必需平台齐备方可 `formal_final`。任何未关闭的业务口径对齐禁止正式发布。
+2. **Playbook 不写死平台组合**：经营月报声明 `platform_selection=explicit`。每次交互式 Run 必须显式给出 `target_platforms`；定时任务必须在调度配置中声明。用户可复用同一月报 Playbook 选择 Shopify、Amazon、TikTok 或其它已注册平台，无须复制 Playbook。
+3. **本次目标决定必需平台**：`target_platforms` 中的平台是该 Run 的 required platforms；Profile `enabled` 只表示可选择。核心能力缺失时不得在原目标范围内 final；用户可明确移出该平台，整体 C1 重新审核后为剩余目标生成 final。
+4. **能力分核心与可选**：月报核心商业总账能力为订单/行项、商品金额与折扣、币种与汇率、下单时间、取消识别、退款金额与发生时间、稳定账户/订单键、数据水位。商品统一映射、客户、流量、目标、归因、退货件数和平台原生模块均为可选能力。
+5. **可选能力不得静默跳过**：发现 unsupported 时先逐项询问用户。能补则该分支进入 `awaiting_alignment`；用户明确本次无法提供并同意跳过后，记录 run-only waiver，在能力矩阵标注并省略对应章节，仍可 final。长期关闭必须另行明确并更新 Profile/ADR。
+6. **无人值守不代替用户决策**：定时 Run 遇到新的能力缺口时生成 alignment ticket 并通知用户；未受影响分支继续形成 dry-run，禁止自动跳过或正式发布。
+7. **待对齐只允许 dry-run**：受影响分支暂停，独立分支继续计算和留证据；可生成带水印的内部 dry-run，但不得进入 C3 或 formal 发布。
+8. **平台账户是 canonical 经营原子**：统一键为 `platform + account_id`；Shopify site、Amazon seller+marketplace、TikTok shop 先保持独立，再由 Profile 映射到 reporting site/market/region。缺市场映射不影响总账，但相应汇总维度按可选能力流程对齐。
+9. **组件级审批复用**：平台组合变化后整体计划 C1 必须重审；未变化平台且口径/SQL/source contract 指纹完全相同的 C2 分支可复用；新增平台分支单独 C2；C3 每份报告每次审核。
+10. **审批口径指纹确定化**：`caliber_fingerprint` 必须覆盖当前 metric 定义、有效 rule-pack 内容、manifest、Profile、adapter/schema contract、SQL 模板、source contract 及所有会影响结果的 env override；敏感值只入 hash，不落明文。
+11. **数据齐备判定**：每个核心源按报告期截止点 + Profile/adapter 声明的延迟窗口检查 watermark 和质量断言。迟到数据生成新版本，禁止覆盖旧版。报告期内任何有效金额无法按既定汇率规则折算时，阻断跨币种 formal 发布；禁止排除或邻近月/实时汇率兜底。
+12. **Profile 与 Adapter 分级认证**：Profile 经过完整校准 Run、核心合同/对账/Eval 通过并由用户或管理员显式批准后，以新不可变版本转 active。新增 Adapter 按组件认证；未通过合同测试、样本对账与批准的 adapter/version 只能 dry-run，不使已认证组件退回 draft。
+13. **地区原生口径门禁**：TikTok 非美国地区在对应官方定义核验前保持 platform-native 未启用；canonical 订单/退款可正常进入正式报告。禁止拿美国定义加提示后当其它地区正式原生口径。
+14. **机器契约先于 S0 实现**：S0 必须冻结 Playbook manifest、Rule Pack 索引、Plan DAG、Metric availability、Run/Error/Artifact/Trace envelope 与 Profile schema/migration。`awaiting_alignment` 是分支状态，Orchestrator 不得退化为线性流水线。
+15. **C3 审核不可变候选包**：运行过程持续写临时工件；执行与校验完成后封存候选证据包并计算 hash；Evaluator 读取该候选包；C3 通过后只写发布记录/签名并发布，不修改候选内容。C3 驳回后的修复形成新 revision/hash。
+16. **canonical 最小补强**：报告期只认 canonical `order_created_date`，物理时间字段留在 adapter；退款事件增加 `refund_kind`（至少 line refund / order adjustment），退款数量可空并由 capability 声明；订单行增加商业行/样品/赠品标记。Shopify adjustment 与 TikTok refund 不得靠同一无类型字段猜语义。
+
+**被否决**：按平台组合复制月报；所有 enabled 平台自动阻断所有场景；缺可选能力静默跳过或补 0；核心能力缺失仍保留平台并发布 final；跳过确认自动永久写入 Profile；新增平台使整个 Profile 退回 draft；自动继承 active；美国站原生口径直接套其它地区；C3 审核后再补写证据包；月报 SQL 在跨平台层写死 `sale_date`。
+
+**修订关系**：扩展 ADR-013/057/066/067/068；将 ADR-055/059/065 中的 Shopify 物理时间字段收窄到 `platform:shopify`，跨平台规则统一使用 canonical 时间；不改变 ADR-010 的下单时点业务口径。
+
+**影响**：`10-architecture.md`、`metrics.md`、`data-sources.md`、playbooks、`rules.md`、`eval-rubric.md`、`profile.yaml`、`PROJECT_STATUS.md`。本条不写 `harness/` 业务代码。

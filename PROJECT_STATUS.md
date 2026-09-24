@@ -2,7 +2,7 @@
 
 > 本文件是本项目**唯一**的进度与上下文同步文档。约束见 `AGENTS.md` 守则 1。
 > 任何 agent 在「开始 / 切换 / 完成」任务时点必须更新本文件；新 agent / 新会话 / 发现本节有未读更新时，必须先读 `AGENTS.md` 守则 0 再工作，只续写、不覆盖。
-> 最后更新：2026-09-24 16:54 | 更新者：Atlas
+> 最后更新：2026-09-24 18:02 | 更新者：Atlas
 
 ---
 
@@ -29,7 +29,7 @@
 2. **可复现三要素** —— 数据快照 hash + 代码留档 + 参数与模型版本，缺一不出报告。
 3. **单源事实** —— 事实只在 `docs/`；本文件只写状态与链接，不复制正文。
 
-硬规则 R-01~R-42 + **R-49～R-96** 见 `docs/30-constraints/rules.md`；指标采用 canonical/platform-native/provisional/diagnostic 四态，口径见 `docs/20-domain/metrics.md`；跨平台 canonical、规则四层、生产运行契约与施工切片见 `docs/10-architecture.md`（ADR-066～068）。记忆层为口径/错误/证据包三类文件源。剧本登记见 `docs/20-domain/playbooks/index.md`；能力契约 SK-01~08 见 `docs/20-domain/skills/index.md`；字段实测见 `docs/20-domain/data-audit.md`。核心宪法见 `AGENTS.md` 守则 0。ADR-029 不生效；ADR-030 原清单已收口。
+硬规则 R-01~R-42 + **R-49～R-102** 见 `docs/30-constraints/rules.md`；指标采用 canonical/platform-native/provisional/diagnostic 四态，口径见 `docs/20-domain/metrics.md`；动态平台、能力门禁、三维运行状态、不可变候选包与组件认证见 `docs/10-architecture.md`（ADR-066～069）。记忆层为口径/错误/证据包三类文件源。剧本登记及机器 manifest 见 `docs/20-domain/playbooks/index.md`；能力契约 SK-01~08 见 `docs/20-domain/skills/index.md`；字段实测见 `docs/20-domain/data-audit.md`。核心宪法见 `AGENTS.md` 守则 0。ADR-029 不生效；ADR-030 原清单已收口。
 
 ## 3. 已完成的关键进展（含日期）
 
@@ -119,6 +119,7 @@
 | 2026-09-24 15:42 | Atlas | **ADR-066**：产品化分期规划（记忆层 + 预留槽 + 行业控制面对齐）。未写代码 | ADR-066、架构 §8–11、R-80/R-81 |
 | 2026-09-24 15:52 | Atlas | **ADR-067**：核心与场景解耦；`run`/`ask` 并列。未写代码 | ADR-067、架构 §13、R-82、playbooks/index.md |
 | 2026-09-24 16:54 | Atlas | **ADR-068**：跨平台 canonical 内核 + TikTok 首阶段真实接入；规则/指标/评估解耦，生产运行契约补齐；未写 harness 代码 | ADR-068、架构 §14～17、R-83～R-96、TikTok 七表实测 |
+| 2026-09-24 17:58 | Atlas | **ADR-069**：动态目标平台、核心/可选能力、三层报告等级、readiness、候选包/C3 指纹与 Profile/Adapter 组件认证契约收口；未写 harness 代码 | ADR-069、架构 v0.5、R-97～R-102、月报 manifest、rule-packs.yaml |
 
 ## 4. 进行中的任务及负责人
 
@@ -133,6 +134,7 @@
 | 撤回 ADR-029 写入、全部改标待对齐后逐项问答 | Atlas | 口径已收口 2026-09-24 | ADR-030～065 |
 | 产品化规划（模块化 / 预留槽 / 行业控制面 / 场景与平台解耦） | Atlas | **已完成** 2026-09-24 16:54 | ADR-066～068；S0 待用户确认后开工 |
 | 跨平台架构修订与 TikTok 首阶段接入规划 | Atlas | **已完成** 2026-09-24 16:54 | ADR-068；架构/指标/规则/数据源/剧本/技能/评估/profile 已同步；未写 harness 代码 |
+| Harness 架构契约收口（动态平台 / 能力门禁 / 运行与审批契约） | Atlas | **已完成** 2026-09-24 18:02 | ADR-069 + 架构/规则/指标/数据源/Playbook/Eval/Profile 与机器 manifest 同步；YAML/引用/表格/补丁一致性验证通过；不写 harness 业务代码 |
 
 ## 5. 待办与优先级排序
 
@@ -152,10 +154,10 @@
 
 | 优先级 | 待办 | 负责人 | 依赖 |
 |---|---|---|---|
-| **P1** | **S0 骨架**：typed Port/registry + 机器 manifest + Run/Error/Artifact 契约 + CLI `run`/`ask`/`playbooks` + 非月报 fixture + no-op（ADR-066～068） | Atlas | 规划已落 `docs/10-architecture.md`；**用户确认后才写 `harness/` 代码** |
-| **P1** | S1–S7 按架构 §11：Shopify/TikTok adapter → canonical → MetricRegistry → 场景技能 → 校验评估 → 跨平台报告 → LLM `ask` | Atlas | S0 |
+| **P1** | **S0 骨架**：typed Port/registry + Playbook/Rule Pack 机器 manifest + Run/Error/Artifact 三维契约 + CLI `run`/`ask`/`playbooks` + 非月报 fixture + no-op（ADR-066～069） | Atlas | 规划已落 `docs/10-architecture.md`；**用户确认后才写 `harness/` 代码** |
+| **P1** | S1–S7 按架构 §11：认证 PlatformAdapter → canonical → MetricRegistry → 场景技能 → 封包后校验评估 → 动态平台报告 → LLM `ask` | Atlas | S0 |
 | **P1** | 能力层落地：`core/llm/`、`core/skills/` SK-01~08；MCP/Web/Schedule 仅保留 Port + no-op，不铺空目录 | Atlas | S0 |
-| **P1** | 接真实库（只读）跑通 Shopify + TikTok 端到端月报；TikTok Affiliate/LIVE 原生模块不进 canonical 合计 | Atlas | S1 起 |
+| **P1** | 接真实库（只读）分别认证 Shopify/TikTok adapter，并按每次显式 `target_platforms` 跑通端到端月报；TikTok Affiliate/LIVE 原生模块不进 canonical 合计 | Atlas | S1 起 |
 | **P1** | Reporter 实现：Markdown 主报告 + HTML 交互图表，产物入 `runs/<task>/report/` | Atlas | S6 |
 | **P1** | 新老客分层（M501–M507）接入月报 | Atlas | S4 |
 | P2 | 大促日历（`promo_calendar.events`）—— 用户 2026-09-22 确认**暂不提供**；`enabled=false`，`missing_behavior=annotate_not_block`（ADR-054 / R-70）。补日历后打开 `enabled` | 用户 | 需要时再补 |
@@ -277,6 +279,7 @@
 | ADR-066 | 2026-09-24 | **产品化分期规划**：记忆层三类文件源；预留槽占位 + 显式 no-op；行业控制面对齐；规划写在架构 §8–11 | 同上 |
 | ADR-067 | 2026-09-24 | **核心与场景解耦**：`run` 与 `ask` 并列；编排器禁止写死月报；月报只是第一份验收剧本 | 同上 |
 | ADR-068 | 2026-09-24 | **跨平台 canonical 内核 + TikTok 首阶段真实接入**：规则/指标/评估分层；逐源证据、运行状态、PII 与完整度契约 | 同上 |
+| ADR-069 | 2026-09-24 | **动态平台与生产门禁契约收口**：显式目标平台、核心/可选能力、报告等级、readiness、封包/C3 指纹、Profile/Adapter 组件认证 | 同上 |
 
 ## 8. 附：文档更新日志
 
@@ -347,3 +350,6 @@
 | 2026-09-24 16:45 | Atlas | 开始跨平台架构修订：用户确认 canonical 适配层、双层指标、四层规则包、TikTok 首阶段真实接入与官方口径留档；先追加 ADR-068，不写 harness 代码 |
 | 2026-09-24 16:54 | Atlas | **ADR-068 修订完成**：同步架构、指标、规则、数据源/审计、月报、Skill、Eval、profile；TikTok 七表实测与官方口径留档；新增 E-0009/E-0010、R-83～R-96；本地 Git 已建立基线；未写 harness 代码 |
 | 2026-09-24 17:02 | Atlas | **最终一致性复核**：canonical 客户/订单/退款定义去 Shopify 物理耦合；修正规则包与 Skill 参数路径；只读重跑确认 Shopify 21 个 site、不可折算 24,763 行；核实 TikTok 退货行无数量字段，M207b 标 unsupported；修复状态表列数和过期 ADR 摘要。未写 harness 代码 |
+| 2026-09-24 17:51 | Atlas | 开始 ADR-069 架构契约收口：按 17 轮单问题确认，修复动态平台复用、核心/可选能力、报告等级、运行状态、审批与组件认证契约；不写 harness 业务代码 |
+| 2026-09-24 17:58 | Atlas | **ADR-069 架构契约收口完成**：同步架构、规则、指标、数据源/审计、动态月报 Playbook 与机器 manifest、rule pack 索引、评估量表和 Profile v2；进入一致性验证与本地提交；未写 harness 业务代码 |
+| 2026-09-24 18:02 | Atlas | **一致性验证通过**：三份 YAML 可解析；机器规则/指标/Skill 引用完整；启用平台覆盖全部月报核心 capability；DAG 为 seal→evaluate→C3；Markdown 表格与 `git diff --check` 通过；过期 canonical/platform 耦合扫描仅剩 ADR 被否决方案 |

@@ -2,19 +2,19 @@
 
 > 唯一职责：定义 harness 硬约束。本文件是约束的唯一来源，规则编号 R-xx，可被规则引擎直接引用。
 > 违反「阻断级」规则必须中止流程，不得出报告。
-> 版本 v0.6 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（R-01 ~ R-42 + **R-49～R-96**）。ADR-029 的 R-43~R-48 **编号占用且不复用，待对齐、不生效**（ADR-030）。ADR-068 起规则按 scope 组合加载。
+> 版本 v0.7 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（R-01 ~ R-42 + **R-49～R-102**）。ADR-029 的 R-43~R-48 **编号占用且不复用，不生效**（ADR-030）。ADR-068 起规则按 scope 组合加载；ADR-069 冻结动态平台与发布契约。
 
 ## 规则包与作用域
 
-本文件仍是规则正文 SSOT；运行时不得整包全局加载。规则目录按下列 scope 生成，单条规则可被多个包引用：
+本文件仍是规则正文 SSOT；运行时不得整包全局加载。机器可加载的 pack→规则编号索引单源在 [`rule-packs.yaml`](rule-packs.yaml)，不得从本表或正文标题猜测。作用域职责如下：
 
-| Rule pack | 适用范围 | 主要规则 |
+| Rule pack | 适用范围 | 机器 id |
 |---|---|---|
-| `core` | 所有任务 | R-01、R-03、R-07～R-11、R-49、R-76、R-80～R-89、R-92～R-96 |
-| `domain:ecommerce` | 电商统一数据与指标 | R-05、R-06、R-13、R-14、R-17、R-24、R-31、R-74～R-78 |
-| `platform:shopify` | Shopify adapter / 指标 | R-15～R-41、R-50～R-72 中涉及 Shopify 字段与表者 |
-| `platform:tiktok` | TikTok adapter / 原生指标 | R-83～R-92 中通用 adapter 条款 + R-90/R-91 TikTok 专属条款 |
-| `playbook:monthly-business-review` | 月报流程与输出 | R-02、R-06、R-09、R-12、R-17、R-42、R-70、R-73、R-74、R-77～R-79 |
+| Core | 所有任务 | `core` |
+| 电商 Domain | 电商统一数据与指标 | `domain:ecommerce` |
+| Shopify | Shopify adapter / 指标 | `platform:shopify` |
+| TikTok | TikTok adapter / 原生指标 | `platform:tiktok` |
+| 经营月报 | 月报流程与输出 | `playbook:monthly-business-review` |
 
 `plan.rule_packs` 必须显式列出本次生效包；同级冲突阻断，更具体 scope 的覆盖必须能追到 ADR。规则正文中出现平台表名，不代表它对其他平台生效。
 
@@ -56,13 +56,13 @@
 | R-31 | **无汇率不得替代**：汇率表仅覆盖 **2022-01~2026-09**；按 N+1、缺失时回退当月的既定顺序，仍有 **24,763 行不可折算**（`COUNT` 复核 @ 2026-09-24）。禁止用邻近月替代或插值，须输出「不可折算」并单列；报告期默认从 2022-01 起 | 阻断 |
 | R-32 | **停运站点须识别并排除**：末次数据距今 > 90 天的站点标为「停运」，**不得参与异动检测与同比环比**。实测停运站点：ZA(2025-08-31)、UA(2025-10-30)、KR(2026-04-19) | 阻断 |
 | R-33 | **目标表站点须映射**：`market_goal.站点` 与销售表编码不一致（`NGA`↔`NG`），且含聚合行 `南亚` / `众筹`（非站点）。须经映射表关联并排除聚合值；缺目标按 R-17 输出「目标未设置」 | 阻断 |
-| R-34 | **月份归属统一用 `sale_date`**：与 `order_created_at` 有 3.97% 跨月。理由：与现有报表对齐、`dedup_fingerprint` 基于 `sale_date`、ADR-010 的下单时点在本表即销售归属日 | 阻断 |
+| R-34 | **Shopify adapter 月份映射**：Shopify canonical `order_created_date` 取 `sale_date`；其与 `order_created_at` 有 3.97% 跨月。该物理字段规则只属 `platform:shopify`，不得用于其它平台或跨平台 SQL | 阻断 |
 | R-35 | **顾客可识别主键 = `shopify_customer_gid`**（ADR-026 + ADR-062）：`customer_exists_flag` 有 **2,139 行 NULL**，不可作为判定依据。M507 实测 = 1,287,312 / 1,289,508 = **99.83%** | 阻断 |
 | R-36 | **数据源白名单制：副本 / 备份 / mongo 系列一律禁用**（用户 2026-09-22 明确：老版本备份遗留，不纳入使用考虑）。权威表见 `data-audit.md` §8。禁用清单：`*_backup*` / `*_copy*` / `*_260422` / `*_0731` / `*_old_*` / `shopify_orders_mongo*`。实例：`nssku对应映射表` 主表匹配率 **100%** vs `_copy1` **26.51%**；`shopify_sales_by_order` 1,289,508 行 vs `_260422` 48.9 万行（仅到 2026-04）。**行数一律以 `COUNT(*)` 为准，`information_schema` 估算值不可用于任何口径判断**。登记行数时**必须同时标注实测日期**（见 E-0003：本规则自身的产物——§8 白名单表——也曾混入估算值，复发第 4 次） | 阻断 |
 | R-37 | **转化率必须同源**：分子分母都取自 GA4（`month_basic_data.transactions / sessions`）。**禁止 GA4 sessions 配 Shopify 订单数** —— 实测 GA4 仅覆盖 Shopify 订单的 **52.4%**（US 36.6%、EU 16.8%），跨源比值是口径错误。报告须同时给出结账率 `checkouts/sessions` 与两源差异率 | 阻断 |
 | R-38 | **站点编码三处不一致，跨源关联须映射**：销售表 `NG` / 目标表 `NGA` / GA4 `nga`；GA4 用小写须 `UPPER()` 归一 | 阻断 |
-| R-39 | **新客判定 = 首次下单月（`MIN(sale_date)` 落在报告期），禁止用 `customer_created_at`**。后者是账号注册时间：实测 2026-08 注册月口径 72,680 vs 首单月口径 7,940（**9.2 倍**，且超过当月活跃客户 11,123）；58.9% 客户注册后非当天首单，3.4% 隔一年以上。首单月口径闭合验证：新客 7,940 + 老客 3,183 = 活跃 11,123 ✓ | 阻断 |
-| R-40 | **客户指标默认站点内统计**：gid 按站点唯一（2,229,529 个 gid 均只属 1 个站点），跨站点不共享；但 9.2% 的邮箱跨多站点。全局客户数须按 `email` 归并并显式标注，不得与站点内口径混用 | 阻断 |
+| R-39 | **新客判定 = canonical 首次下单月**：`MIN(order_created_date)` 落在报告期。Shopify adapter 来源 `sale_date`，禁止用账号注册时间 `customer_created_at`；其它平台只在 identity capability 可用时计算 | 阻断 |
+| R-40 | **客户身份默认平台/账户内统计**：Shopify gid 按站点唯一；跨平台/账户合并只能使用当前组织已确认的 identity map。禁止用 email/手机号自动归并；不得与账户内口径混用 | 阻断 |
 | R-41 | **Shopify platform pack 白名单 = 8 张表**（ADR-027/028，作用域由 ADR-068 收窄）：`shopify_sales_by_order` / `market_goal` / `exchange_rate` / `month_basic_data` / `产品型号度数范围` / `nssku对应映射表` / `refunds_lineitems` / `refunds_adjustments`。本条不得阻断 TikTok 或未来 adapter 自己声明的权威表。Shopify 禁用/不理会清单保持不变；扩大任一平台白名单必须另立 ADR | 阻断 |
 | R-42 | **成本 / 利润 / 毛利类指标不纳入首期设计范围**（ADR-027 + ADR-058）：M201 毛利 / M202 毛利率 / M203 平台佣金率 / M204 广告费率 / M205 履约费率 / M206 仓储费率 / **M208 净利 / M209 净利率**及 COGS 口径 —— **不定义、不建模、不留空占位、不在报告中留标题**，而非「暂不输出」。R-03 照常生效：不估算、不插值、不用行业均值填充 | 阻断 |
 | R-49 | **未用户确认的口径禁止写入 canonical 并标「已确认」**（ADR-031 / E-0006）。用户补充、扫描笔记、agent 默认值一律视为参考。与既有 ADR 冲突必须先列清再问，每次只问一个问题。R-43～R-48 编号不复用 | 阻断 |
@@ -79,7 +79,7 @@
 | R-60 | **无有效型号且多 NS 的金额进「未映射」**（ADR-046）。禁止并进「套件未拆」、禁止拆到各 NS。报告出现该桶须按 G-21 标注，不得每图重复 | 阻断 |
 | R-61 | **型号维 ASP 只许用金额已进入该型号的行**（ADR-047 / M106）。分子分母必须是同一批单有效型号店铺 SKU。禁止用该型号全部件数（含套件成员）作分母；禁止给套件未拆 / 未映射 / 配件降级 NS 出型号 ASP；禁止用 M104 当型号 ASP 分母。站点 ASP = M102 / M104 | 阻断 |
 | R-62 | **型号维对外呈现主键 = `产品型号_统一`**（ADR-048）。金额仍先落到有效型号。禁止报告型号维用 `产品型号` 原文当主键；禁止跳过 JOIN 直接对统一列。套件未拆 / 未映射 / 降级 NS 不贴统一标签 | 阻断 |
-| R-63 | **Shopify adapter 的 M103 原始订单键 = `order_name`**（ADR-049，作用域由 ADR-068 收窄）。禁止在 Shopify 主表用不存在的 `order_id`，亦禁止用行级 `id` 或退款表 `order_id`。canonical M103 使用 `platform + shop_id + adapter_order_id`，TikTok adapter_order_id=`order_id` | 阻断 |
+| R-63 | **Shopify adapter 的 M103 原始订单键 = `order_name`**（ADR-049，作用域由 ADR-069 收窄）。禁止在 Shopify 主表用不存在的 `order_id`，亦禁止用行级 `id` 或退款表 `order_id`。canonical M103 使用 `platform + account_id + order_id`；adapter 负责把 Shopify `order_name`、TikTok `order_id` 映射到 canonical `order_id` | 阻断 |
 | R-64 | **退款关联销售表的连接键 = `shop_name` + `name`↔`order_name`**（ADR-050）。禁止用销售表不存在的 `order_id` 当连接键；禁止把 mongo 行写入销售表 | 阻断 |
 | R-65 | **未匹配退款不冲 M102、不进 M207 分子**（ADR-050）。不把补拉当闭环。禁止把未匹配退款静默并进净额 | 阻断 |
 | R-66 | **主报告标注服从 G-21**（ADR-050）。禁止堆砌核因细节；P0 同类全篇只出一次 | 阻断 |
@@ -87,15 +87,15 @@
 | R-68 | **规模指标不按 `payment_status` 过滤**（ADR-052）。M101–M104 只按 `cancelled_at` 剔除取消单。禁止「仅 PAID」口径。改过滤须另立 ADR | 阻断 |
 | R-69 | **已转正草稿计入规模，不按 `source_name` 过滤**（ADR-053）。禁止剔除 `shopify_draft_order`。禁止把来源当渠道维（ADR-024）。未完成草稿不在销售表，本条不涉及 | 阻断 |
 | R-70 | **无大促日历不阻断规模 / 效率 / 达成**（ADR-054）。禁止因日历缺失整份月报失败。异动章必须标 `calendar_missing=true`（G-21 P0）。禁止把未识别窗口的下跌写成经营恶化。禁止把 `in_promo_window` 默认成 false | 阻断 |
-| R-71 | **报告期 = UTC 自然月 × `sale_date`**（ADR-055 / G-04 / G-05）。禁止按站点本地时区重切日/月；禁止 4-5-4。改切法须另立 ADR | 阻断 |
+| R-71 | **报告期 = UTC 自然月 × canonical `order_created_date`**（ADR-055/068/069）。Shopify adapter 映射 `sale_date`，TikTok 映射 `created_time`；禁止跨平台规则引用物理时间列、按站点本地时区重切或使用 4-5-4 | 阻断 |
 | R-72 | **双库同一连接**（ADR-056）。schema 名从 profile 读；SQL 必须 `schema.table`。禁止核心代码写死库名。禁止为同一实例拆 `MYSQL_DATABASE_FACTS` / `MYSQL_DATABASE_DIMS`。缺凭据或缺 schema → 显式 no-op | 阻断 |
-| R-73 | **C1/C2 同完整指纹才可自动放行**（ADR-057，ADR-068 加强）。指纹至少含组织/profile、playbook manifest、metric/rule packs、adapter/schema、SQL 模板与 source contract。任一变化必须再审；C3 每次都审 | 阻断 |
-| R-74 | **新站不参与同比**（ADR-059）。完整月数小于 12 不出 M302；可出 M303；标「新站」（G-21 P0）。合计同比只含够龄站。禁止分母填 0；禁止把站点码写死为新站清单。停运仍按 R-32 | 阻断 |
+| R-73 | **审批按完整口径指纹与组件复用**（ADR-057/068/069）。`caliber_fingerprint` 必须含 metric/rule 内容、manifest、不可变 Profile、adapter/schema/source contract、SQL 模板及结果相关 env hash。平台组合变化重审整体 C1；未变化分支可按 step C2 指纹复用；C3 每个候选包 hash 每次审核 | 阻断 |
+| R-74 | **新经营账户不参与同比**（ADR-059/069）。按 canonical `platform + account_id` 的 `MIN(order_created_date)` 判断完整月数；小于 12 不出 M302，可出 M303并标新账户。合计同比只含够龄账户；禁止分母填 0或写死清单 | 阻断 |
 | R-75 | **站点 ≠ 市场**（ADR-060 / G-22）。禁止把 `site=EU` 当欧盟合计。市场成员只从 profile `markets.groups` 读。禁止市场行与成员站点混加。禁止一个站点属两个市场。禁止用 `market_goal` 空站点市场行当目标 | 阻断 |
 | R-76 | **口径必须可追溯**（ADR-062 / G-23）。已确认条目须能追到 ADR；profile 参数须有 `source`；报告数字须能追到指标编码 + SQL/代码 + 快照 hash。禁止无 ADR 标已确认；禁止「已定」进报告 | 阻断 |
 | R-77 | **M401 量必须与金额同粒**（ADR-063）。量 = 店铺 SKU 件数（M104 ①），价 = 站点 ASP。禁止用 G-17 NS/型号件数作 M401 的量。残差单列，三项之和必须等于 ΔM102 | 阻断 |
-| R-78 | **M402 贡献度用金额切片**（ADR-064）。首期维度：站点 / 品类 / 度电带 / 新老客。禁止市场与成员站点混加。禁止用 NS 件数当金额权重。套件未拆 / 未映射 / 未识别必须出桶 | 阻断 |
-| R-79 | **月报原料 SQL 必须有时间窗**（ADR-065 / G-04）。谓词锁在报告期（UTC 自然月 × `sale_date`）。允许无 LIMIT。禁止用 LIMIT 截断规模 / 净额 / 订单 / 件数。行数与耗时仍受 R-10 | 阻断 |
+| R-78 | **M402 贡献度用金额切片**（ADR-064/069）。首期可选维度：经营账户 / 品类 / 度电带 / 客户层。每层仅在目标平台 capability 完整时执行；禁止把缺 identity 的平台金额塞入“未识别”凑闭合。市场与成员账户不得混加，NS 件数不得作金额权重 | 阻断 |
+| R-79 | **月报原料 SQL 必须有 canonical 时间窗**（ADR-065/069）。计划声明 UTC 自然月 × `order_created_date`，adapter 映射物理谓词。允许无 LIMIT；禁止用 LIMIT 截断规模指标。Policy 禁止在跨平台层写死 `sale_date` | 阻断 |
 | R-80 | **记忆不得污染本期数字**（ADR-066）。planner 可读口径、错误索引、上期证据包指纹与叙事线索。禁止把上期 `metrics.json` 数值当作本期 M101–M507。禁止向量库或会话记忆升格为口径。Session / 向量后端未启用必须显式 no-op | 阻断 |
 | R-81 | **预留能力必须有接口占位**（ADR-066，ADR-068 修订）。未实现能力须有稳定 Port/注册类型 + 显式 no-op（带 `module_id`）。禁止调用方按目录是否存在分叉；禁止静默改走另一条通路；**禁止仅为未来平台批量创建无实现、无引用的空目录** | 阻断 |
 | R-82 | **核心禁止绑定单一场景**（ADR-067）。编排器 / CLI / Reporter / Skill 禁止写死经营月报步骤或章节。剧本只经 registry。`ask` 不得转调 monthly。Skill 必须能在非月报 `ctx` 下运行。无对应剧本且无探索计划时走 G-07，禁止塞进月报当新章 | 阻断 |
@@ -105,7 +105,7 @@
 | R-86 | **Playbook 只从机器可读 manifest 执行**（ADR-068）。Registry 禁止解析 Markdown 推导步骤；manifest 必须声明 contract version、steps、metric/skill refs、rule packs、capabilities、time scope、outline、approval 与 eval overlay | 阻断 |
 | R-87 | **capability 门禁**（ADR-068）。Adapter 必须声明数据能力、覆盖期、水位与质量；缺能力输出 unsupported/coverage，不得估算或假装空值为 0 | 阻断 |
 | R-88 | **未对齐映射进入 `awaiting_alignment`**（ADR-068）。每次只问一个口径问题；受影响分支暂停、独立分支可继续留证据；全部阻断项关闭前不得发布正式报告，禁止静默跳过 | 阻断 |
-| R-89 | **客户身份默认平台/店铺隔离**（ADR-068）。跨平台合并必须有当前组织/profile 已确认的 identity map；禁止用 email/手机号自动合并；业务审批不得跨组织复用 | 阻断 |
+| R-89 | **客户身份默认按 `platform + account_id` 隔离**（ADR-068/069）。跨账户合并必须有当前组织/profile 已确认的 identity map；禁止用 email/手机号自动合并；业务审批不得跨组织复用 | 阻断 |
 | R-90 | **TikTok canonical 订单规则**（ADR-068）。收入按 `created_time`；样品单筛除；取消单筛除且取消退款不得二次冲减；赠品保留并单列但不进 M101–M106；TikTok 官方按 `paid_time` 且含取消/退款的 GMV 仅作 platform-native | 阻断 |
 | R-91 | **TikTok 退款按事件月冲减**（ADR-068）。M102 商品净额只冲 `tiktok_returns.refund_subtotal`，时间取 `event_date`；商品归因用 `tiktok_return_items`。运费/税不得并入商品净销售额；取消表退款不得重复冲减 | 阻断 |
 | R-92 | **PII 默认拒绝**（ADR-068）。姓名、电话、地址、买家账号及含 PII 的 raw JSON 禁止进入 canonical、trace、证据包和报告；客户分析仅用平台命名空间内不可逆哈希。原始 PII 访问须独立授权并留痕 | 阻断 |
@@ -113,6 +113,12 @@
 | R-94 | **运行状态与幂等**（ADR-068）。状态迁移必须符合架构 §16；取消/恢复从 checkpoint 执行；同 `run_id + step_id + input_fingerprint` 重试不得产生重复副作用；失败必须返回脱敏 `ErrorEnvelope` | 阻断 |
 | R-95 | **评估按通用基线 + playbook overlay 执行**（ADR-068）。禁止把 M401/M402 或 M101–M507 全集强制到所有场景；只评 `plan.metric_refs` 与 manifest 声明的 overlay | 阻断 |
 | R-96 | **跨源关联键必须先规范化并记录策略**（ADR-068 / E-0009）。字符集、collation、大小写、首尾空白与 Unicode normalization 必须显式；禁止依赖数据库隐式转换。规范化后仍未命中才可进入未映射桶 | 阻断 |
+| R-97 | **Playbook 平台集合运行时显式选择**（ADR-069）。交互 Run 必须提交非空 `target_platforms`；定时任务必须在调度配置声明。Playbook 禁止写死平台数量或组合；Profile `enabled` 不等于本次 required | 阻断 |
+| R-98 | **月报核心与可选 capability 分层**（ADR-069）。目标平台必须具备商业总账核心能力；缺核心能力不得 waiver 或 final，只可补齐或经 C1 移出目标。可选能力缺失必须先问用户，不得默认跳过 | 阻断 |
+| R-99 | **报告等级严格隔离**（ADR-069）。draft/未认证组件只可 dry-run；active 且仅水位未齐可经 C3 出 formal_partial；核心源齐备才可 formal_final；存在未关闭 alignment ticket 时禁止 C3/formal | 阻断 |
+| R-100 | **数据齐备与汇率门禁**（ADR-069）。核心源须越过报告截止点 + 延迟窗口并通过质量断言；迟到数据出新版本不覆盖。报告期有效金额仍无法折算时阻断跨币种 formal，禁止排除或邻近月/实时汇率兜底 | 阻断 |
+| R-101 | **C3 只审核封存候选包**（ADR-069）。报告、manifest、SQL/代码、参数/模型、断言与 trace 索引先封存并计算总 hash；C3 通过后只追加发布签名。驳回修复必须形成新 revision/hash | 阻断 |
+| R-102 | **Profile/Adapter 组件认证**（ADR-069）。Profile 校准通过并显式批准后以新版本 active；adapter 按组织/profile + adapter/schema 版本独立认证。新增 adapter 不继承 active，也不使已认证组件退回 draft | 阻断 |
 
 ## 说明：R-12 的依据
 

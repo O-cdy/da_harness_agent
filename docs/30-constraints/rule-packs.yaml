@@ -1,0 +1,142 @@
+# 唯一职责：提供 Rule Pack 到 rules.md 规则编号的机器可读索引。
+# 版本：v1.0
+# 最后更新：2026-09-24
+# 状态：生效（规则正文仍以 rules.md 为唯一来源）
+
+schema_version: 1
+contract_version: "1.0"
+definitions_source: docs/30-constraints/rules.md
+
+packs:
+  core:
+    scope: all
+    rules:
+      - R-01
+      - R-03
+      - R-04
+      - R-07
+      - R-08
+      - R-09
+      - R-10
+      - R-11
+      - R-49
+      - R-76
+      - R-80
+      - R-81
+      - R-82
+      - R-83
+      - R-84
+      - R-85
+      - R-86
+      - R-87
+      - R-88
+      - R-89
+      - R-92
+      - R-93
+      - R-94
+      - R-95
+      - R-96
+      - R-97
+      - R-99
+      - R-100
+      - R-101
+      - R-102
+
+  domain:ecommerce:
+    scope: domain
+    rules:
+      - R-05
+      - R-06
+      - R-13
+      - R-14
+      - R-17
+      - R-24
+      - R-31
+      - R-74
+      - R-75
+      - R-76
+      - R-77
+      - R-78
+
+  platform:shopify:
+    scope: platform
+    platform: shopify
+    rules:
+      - R-15
+      - R-16
+      - R-18
+      - R-19
+      - R-20
+      - R-21
+      - R-22
+      - R-23
+      - R-24
+      - R-25
+      - R-26
+      - R-27
+      - R-28
+      - R-29
+      - R-30
+      - R-31
+      - R-32
+      - R-33
+      - R-34
+      - R-35
+      - R-36
+      - R-37
+      - R-38
+      - R-39
+      - R-40
+      - R-41
+      - R-50
+      - R-51
+      - R-52
+      - R-53
+      - R-54
+      - R-55
+      - R-56
+      - R-57
+      - R-58
+      - R-59
+      - R-60
+      - R-61
+      - R-62
+      - R-63
+      - R-64
+      - R-65
+      - R-66
+      - R-67
+      - R-68
+      - R-69
+      - R-72
+
+  platform:tiktok:
+    scope: platform
+    platform: tiktok
+    rules:
+      - R-90
+      - R-91
+
+  playbook:monthly-business-review:
+    scope: playbook
+    playbook: monthly-business-review
+    rules:
+      - R-02
+      - R-06
+      - R-09
+      - R-12
+      - R-17
+      - R-42
+      - R-70
+      - R-71
+      - R-73
+      - R-74
+      - R-77
+      - R-78
+      - R-79
+      - R-95
+      - R-97
+      - R-98
+      - R-99
+      - R-100
+      - R-101

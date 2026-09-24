@@ -16,11 +16,13 @@
 
 profile_id: default
 organization_id: default-org
-schema_version: 1
+schema_version: 2
+profile_version: "0.2.0"
 profile_name: 跨境电商 · 便携储能（当前业务背景）
 created_at: 2026-09-22
-updated_at: 2026-09-24          # ADR-068：跨平台 canonical + TikTok 首阶段
-status: draft    # draft 只允许 dry-run/partial，不得发布 final；实跑校准后转 active（ADR-068）
+updated_at: 2026-09-24          # ADR-069：动态平台、能力门禁与组件认证
+status: draft    # draft 只允许 dry_run；完整校准 + 明确审批后生成新的 active 版本（ADR-069）
+previous_profile_version: null
 
 # ---------- 1. 币种与汇率 ----------
 currency:
@@ -41,7 +43,37 @@ datasource:
       enabled: true
       adapter_id: shopify
       adapter_contract_version: "1.0"
-      capabilities: [orders, refunds, products, traffic, targets, customer_identity]
+      certification:
+        status: uncertified
+        schema_fingerprint: null
+        calibration_run_id: null
+        approved_by: null
+        approved_at: null
+      capabilities:
+        - orders
+        - order_lines
+        - commercial_amounts
+        - currency
+        - fx_conversion
+        - order_created_time
+        - cancellations
+        - refund_amount
+        - refund_event_time
+        - stable_account_key
+        - stable_order_key
+        - source_watermark
+        - return_quantity
+        - product_identity
+        - traffic_canonical
+        - targets
+        - customer_identity
+      account_mapping:
+        source_account_field: site
+        reporting_site_map: identity
+      source_readiness:
+        cutoff: report_period_end
+        grace_window_hours: null
+        missing_grace_window_action: awaiting_alignment
       rule_pack: platform:shopify
       whitelist:
         - shopify_sales_by_order
@@ -56,8 +88,37 @@ datasource:
       enabled: true
       adapter_id: tiktok
       adapter_contract_version: "1.0"
-      capabilities: [orders, refunds, products, affiliate, live]
+      certification:
+        status: uncertified
+        schema_fingerprint: null
+        calibration_run_id: null
+        approved_by: null
+        approved_at: null
+      capabilities:
+        - orders
+        - order_lines
+        - commercial_amounts
+        - currency
+        - fx_conversion
+        - order_created_time
+        - cancellations
+        - refund_amount
+        - refund_event_time
+        - stable_account_key
+        - stable_order_key
+        - source_watermark
+        - product_identity
+        - affiliate
+        - live
       unsupported_capabilities: [traffic_canonical, targets, customer_identity, return_quantity]
+      account_mapping:
+        source_account_field: shop_id
+        reporting_site_map: {}
+        unmapped_action: retain_account_and_ask_for_optional_mapping
+      source_readiness:
+        cutoff: report_period_end
+        grace_window_hours: null
+        missing_grace_window_action: awaiting_alignment
       rule_pack: platform:tiktok
       whitelist:
         - tiktok_sales_by_order
@@ -83,6 +144,7 @@ datasource:
     - market_goal_bonus
   facts_schema: bluetti_new      # ADR-056：事实表所在 schema；禁止写进核心代码
   dims_schema: shared_data       # ADR-056：维表 / 汇率 / 映射所在 schema
+  capability_contract: docs/20-domain/playbooks/monthly-business-review/manifest.yaml
   source: docs/20-domain/data-sources.md#1.2-1.4
 
 # ---------- 3. 商品维度体系（公司特定！） ----------
@@ -133,7 +195,7 @@ revenue:
   refund_treatment: current_month_writeoff   # 发生月冲减，不回溯
   cancel_treatment: exclude      # 取消单不计入订单数/件数/GMV
   history_immutable: true        # 报告版本不可变（G-08）
-  versioning: partial_final      # 任一必需平台未齐=partial；齐备后新 final，不覆盖
+  versioning: partial_final      # 任一目标平台核心源未齐=partial；齐备后新 final，不覆盖
   platform_overrides:
     shopify:
       order_key: order_name
@@ -205,9 +267,14 @@ metrics_excluded_first_phase:
 # ---------- 6. 比率类口径 ----------
 ratios:
   return_rate_mode: dual         # dual（金额+件数并列）| amount | quantity
-  conversion_rate_basis: ga4_transactions_per_session  # ADR-025/R-37：分子分母**同源取自 GA4**；禁止 GA4 sessions 配 Shopify 订单数
-  conversion_aux_ratios: [checkouts_per_session, ga4_vs_shopify_order_gap]  # 辅助 + 对账
-  conversion_source: month_basic_data   # GA4 视图（8,149 行，2025-06 起）
+  platform_overrides:
+    shopify:
+      conversion_rate_basis: ga4_transactions_per_session
+      conversion_aux_ratios: [checkouts_per_session, ga4_vs_shopify_order_gap]
+      conversion_source: month_basic_data
+    tiktok:
+      conversion_rate_basis: unsupported
+      return_quantity: unsupported
   source: docs/20-domain/metrics.md#M207-M210
 
 # ---------- 7. 目标 ----------
@@ -220,8 +287,8 @@ targets:
 
 # ---------- 8. 客户分层 ----------
 customer:
-  enabled: true
-  namespace: platform_shop
+  enabled_when_capability: customer_identity
+  namespace: platform_account
   pii_mode: irreversible_hash
   cross_platform_merge: confirmed_identity_map_only
   platform_identity:
@@ -251,9 +318,9 @@ report:
   layout: canonical_overview_plus_platform_sections
   platform_native_appendix: true
   per_platform_coverage: true
-  final_requires_all_required_platforms: true
+  final_requires_all_target_platforms: true
   carry_forward_missing_platform: false
-  c1_c2_auto_same_template: true    # ADR-057：同 playbook 同口径首次放行后自动
+  c1_c2_reuse_same_fingerprint: true
   c3_always: true                   # ADR-057：C3 每次都审
   source: docs/20-domain/metrics.md#G-04-G-05-G-21
 
@@ -273,6 +340,12 @@ markets:
   ungrouped_bucket: 未分组
   source: docs/20-domain/metrics.md#G-22
 
+reporting_hierarchy:
+  atomic_grain: [platform, account_id]
+  optional_rollups: [site, market, region]
+  cross_account_identity_merge: explicit_map_only
+  source: docs/10-architecture.md#3
+
 # ---------- 13. 量价拆解（ADR-063 / R-77） ----------
 volume_price:
   qty_grain: shop_sku            # M104 ①；禁止 nssku
@@ -284,6 +357,11 @@ volume_price:
 attribution:
   metric: M102
   dimensions: [site, category, capacity_band, customer_segment]
+  capability_gates:
+    site: core
+    category: product_identity
+    capacity_band: product_identity
+    customer_segment: customer_identity
   required_buckets: [套件未拆, 未映射, 未识别]
   weight: amount                 # 禁止 nssku_qty
   source: docs/20-domain/metrics.md#M402
@@ -336,8 +414,12 @@ alignment:
   initial_run_state: created
   unresolved_transition: awaiting_alignment
   continue_independent_branches: true
+  independent_branch_output: dry_run_only
   publish_formal_before_resolved: false
   ask_one_question_at_a_time: true
+  optional_capability_waiver:
+    scope: current_run_only
+    unattended_action: create_alignment_ticket
   source: docs/10-architecture.md#16
 
 # ---------- 21. 安全与隐私（ADR-068 / R-92） ----------
@@ -348,3 +430,56 @@ privacy:
   raw_json_in_artifacts: false
   original_pii_requires_explicit_capability: true
   source: docs/10-architecture.md#17
+
+# ---------- 22. 动态 Playbook 与报告等级（ADR-069 / R-97-R-101） ----------
+playbooks:
+  monthly-business-review:
+    manifest: docs/20-domain/playbooks/monthly-business-review/manifest.yaml
+    platform_selection:
+      mode: explicit
+      default_target_platforms: null
+      scheduled_runs_require_target_platforms: true
+    unavailable_optional_capability_action: ask_or_ticket
+    omit_unsupported_sections: true
+
+report_policy:
+  draft_profile_allowed_tiers: [dry_run]
+  active_profile_allowed_tiers: [dry_run, formal_partial, formal_final]
+  formal_partial_requires:
+    - all_target_platform_core_capabilities
+    - only_source_readiness_pending
+    - current_run_c3_approval
+  formal_final_requires:
+    - all_target_platform_core_capabilities
+    - all_target_platform_sources_ready
+    - no_open_alignment
+    - current_run_c3_approval
+  late_data_action: new_immutable_report_version
+  source: docs/30-constraints/rules.md#R-99
+
+approvals:
+  c1:
+    reuse_scope: playbook_and_target_platform_set
+    fingerprint_fields: [profile_version, playbook_manifest_hash, target_platforms, core_metric_contract_hash, rule_pack_hash]
+  c2:
+    reuse_scope: certified_platform_component
+    fingerprint_fields: [platform, adapter_contract_version, adapter_schema_fingerprint, platform_rule_pack_hash]
+  c3:
+    reuse: never
+    subject: sealed_candidate_package
+    fingerprint_fields: [run_id, report_version, candidate_package_hash, source_manifest_hash, plan_hash, evaluation_hash]
+  source: docs/10-architecture.md#16
+
+profile_lifecycle:
+  activation_requires:
+    - complete_calibration_run_passed
+    - explicit_user_or_admin_approval
+  activation_action: create_new_immutable_version
+  new_adapter_action: certify_component_without_downgrading_active_profile
+  source: docs/10-architecture.md#16
+
+config_migration:
+  from_schema_version: 1
+  to_schema_version: 2
+  mode: explicit
+  source: docs/10-architecture.md#16
