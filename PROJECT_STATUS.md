@@ -19,6 +19,7 @@
 | 数据接入 | MySQL 直连（默认）+ Excel/CSV 导入 |
 | LLM | 分层路由 + 可插拔 provider，env 门控 |
 | 外部知识源 | ima「不知渭河-数据分析知识库」`kb_id=7452382921234335`（只读，仅标题+摘要可用，见 B-01） |
+| 代码远端 | `https://github.com/O-cdy/da_harness_agent.git`；本地 `master` 跟踪 `origin/master` |
 
 ## 2. 当前架构与关键约定
 
@@ -135,7 +136,7 @@
 | 产品化规划（模块化 / 预留槽 / 行业控制面 / 场景与平台解耦） | Atlas | **已完成** 2026-09-24 16:54 | ADR-066～068；S0 待用户确认后开工 |
 | 跨平台架构修订与 TikTok 首阶段接入规划 | Atlas | **已完成** 2026-09-24 16:54 | ADR-068；架构/指标/规则/数据源/剧本/技能/评估/profile 已同步；未写 harness 代码 |
 | Harness 架构契约收口（动态平台 / 能力门禁 / 运行与审批契约） | Atlas | **已完成** 2026-09-24 18:02 | ADR-069 + 架构/规则/指标/数据源/Playbook/Eval/Profile 与机器 manifest 同步；YAML/引用/表格/补丁一致性验证通过；不写 harness 业务代码 |
-| GitHub 远端接入与 Cloud 开发准备 | Atlas | **进行中** 2026-09-24 18:36 | 目标远端：`https://github.com/O-cdy/da_harness_agent.git`；待推送当前分支 |
+| GitHub 远端接入与 Cloud 开发准备 | Atlas | **已完成** 2026-09-24 18:36 | `master` 已推送并跟踪 `origin/master`；Cloud Agent 可从该远端分支启动 |
 
 ## 5. 待办与优先级排序
 
@@ -355,3 +356,4 @@
 | 2026-09-24 17:58 | Atlas | **ADR-069 架构契约收口完成**：同步架构、规则、指标、数据源/审计、动态月报 Playbook 与机器 manifest、rule pack 索引、评估量表和 Profile v2；进入一致性验证与本地提交；未写 harness 业务代码 |
 | 2026-09-24 18:02 | Atlas | **一致性验证通过**：三份 YAML 可解析；机器规则/指标/Skill 引用完整；启用平台覆盖全部月报核心 capability；DAG 为 seal→evaluate→C3；Markdown 表格与 `git diff --check` 通过；过期 canonical/platform 耦合扫描仅剩 ADR 被否决方案 |
 | 2026-09-24 18:36 | Atlas | 开始接入 GitHub 远端，为 Cursor Cloud Agent 提供可克隆基线；目标仓库已确认可访问且当前为空 |
+| 2026-09-24 18:36 | Atlas | GitHub 远端接入完成：新增 `origin`，首次推送 `master` 并建立 upstream；项目已具备 Cursor Cloud Agent 的 Git 基线 |
