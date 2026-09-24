@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import sys
 import threading
 from collections.abc import Iterator
@@ -21,13 +22,20 @@ from harness.core.contracts.models import (
     StrictContract,
 )
 from harness.core.contracts.ports import ConfigMigration, ContractT
-from harness.core.contracts.state import RunSnapshot
+from harness.core.contracts.state import (
+    InvalidRunTransition,
+    ReportTier,
+    RunSnapshot,
+    RunStatus,
+    transition_run,
+)
 
 __all__ = [
     "ConfigMigrationError",
     "FileArtifactStore",
     "FileConfigStore",
     "FileRunStateStore",
+    "IdempotencyConflict",
     "IdempotencyKey",
     "PathBoundaryError",
     "RevisionConflict",
@@ -50,6 +58,10 @@ class ArtifactIntegrityError(RuntimeError):
     """Committed artifact bytes do not match their envelope."""
 
 
+class IdempotencyConflict(RuntimeError):
+    """An idempotency key was reused with different content."""
+
+
 class _ArtifactRecord(StrictContract):
     idempotency_key: IdempotencyKey
     envelope: ArtifactEnvelope
@@ -58,6 +70,8 @@ class _ArtifactRecord(StrictContract):
 
 _LOCKS_GUARD = threading.Lock()
 _THREAD_LOCKS: dict[Path, threading.Lock] = {}
+_WINDOWS_DEVICE = re.compile(r"^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", re.IGNORECASE)
+_WINDOWS_FORBIDDEN_CHARS = frozenset('<>:"|?*')
 
 
 @contextmanager
@@ -95,6 +109,8 @@ def _safe_path(root: Path, relative_path: str) -> Path:
         raise PathBoundaryError(f"absolute path rejected: {relative_path}")
     if ".." in windows.parts or ".." in posix.parts:
         raise PathBoundaryError(f"path traversal rejected: {relative_path}")
+    for component in windows.parts:
+        _validate_portable_component(component)
     candidate = (root / Path(relative_path)).resolve()
     try:
         candidate.relative_to(root.resolve())
@@ -103,9 +119,23 @@ def _safe_path(root: Path, relative_path: str) -> Path:
     return candidate
 
 
+def _validate_portable_component(component: str) -> None:
+    if (
+        not component
+        or component.endswith((".", " "))
+        or any(ord(character) < 32 for character in component)
+        or any(character in _WINDOWS_FORBIDDEN_CHARS for character in component)
+    ):
+        raise PathBoundaryError(f"unsafe path component: {component!r}")
+    device_stem = component.split(".", 1)[0]
+    if _WINDOWS_DEVICE.fullmatch(device_stem):
+        raise PathBoundaryError(f"reserved Windows device name: {component}")
+
+
 def _safe_identifier(value: str, label: str) -> str:
     if not value or value in {".", ".."} or "/" in value or "\\" in value:
         raise PathBoundaryError(f"unsafe {label}")
+    _validate_portable_component(value)
     return value
 
 
@@ -118,6 +148,12 @@ def _atomic_write(path: Path, payload: bytes) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+        if os.name != "nt":
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     finally:
         with suppress(FileNotFoundError):
             temporary.unlink()
@@ -205,9 +241,14 @@ class FileArtifactStore:
     ) -> ArtifactEnvelope:
         path = self._path(idempotency_key)
         with _exclusive_lock(path.with_suffix(".lock")):
-            existing = self.get(idempotency_key)
+            existing = self._load_record(idempotency_key)
             if existing is not None:
-                return existing
+                existing_payload = base64.b64decode(existing.payload_base64, validate=True)
+                if existing.envelope == envelope and existing_payload == payload:
+                    return existing.envelope
+                raise IdempotencyConflict(
+                    "idempotency key already committed with different envelope or payload"
+                )
             _verify_content(envelope, payload)
             record = _ArtifactRecord(
                 idempotency_key=idempotency_key,
@@ -217,7 +258,7 @@ class FileArtifactStore:
             _atomic_write(path, record.model_dump_json().encode())
             return envelope
 
-    def get(self, idempotency_key: IdempotencyKey) -> ArtifactEnvelope | None:
+    def _load_record(self, idempotency_key: IdempotencyKey) -> _ArtifactRecord | None:
         path = self._path(idempotency_key)
         if not path.is_file():
             return None
@@ -226,7 +267,11 @@ class FileArtifactStore:
             raise ArtifactIntegrityError("idempotency key mismatch")
         payload = base64.b64decode(record.payload_base64, validate=True)
         _verify_content(record.envelope, payload)
-        return record.envelope
+        return record
+
+    def get(self, idempotency_key: IdempotencyKey) -> ArtifactEnvelope | None:
+        record = self._load_record(idempotency_key)
+        return record.envelope if record is not None else None
 
     def read_payload(self, envelope: ArtifactEnvelope) -> bytes:
         if not self._artifact_root.is_dir():
@@ -268,6 +313,52 @@ class FileRunStateStore:
                 raise RevisionConflict(
                     f"revision conflict: expected {expected_revision}, found {current_revision}"
                 )
-            committed = snapshot.model_copy(update={"revision": (current_revision or 0) + 1})
+            candidate = RunSnapshot.model_validate(snapshot.model_dump())
+            expected_candidate_revision = expected_revision if expected_revision is not None else 0
+            if candidate.revision != expected_candidate_revision:
+                raise RevisionConflict(
+                    "candidate revision must match expected/current revision: "
+                    f"{candidate.revision} != {expected_candidate_revision}"
+                )
+            if current is None:
+                if (
+                    candidate.run_status is not RunStatus.CREATED
+                    or candidate.plan_revision != 1
+                    or candidate.report_tier is not ReportTier.DRY_RUN
+                    or candidate.branches
+                    or candidate.checkpoint is not None
+                ):
+                    raise InvalidRunTransition(
+                        "initial run snapshot must be pristine created state"
+                    )
+            elif candidate.run_status is current.run_status:
+                if current.run_status in {
+                    RunStatus.COMPLETED,
+                    RunStatus.CANCELLED,
+                    RunStatus.FAILED,
+                }:
+                    transition_run(current, candidate.run_status)
+                if candidate.plan_revision != current.plan_revision:
+                    raise InvalidRunTransition("in-state update cannot change plan_revision")
+            else:
+                validated = transition_run(
+                    current,
+                    candidate.run_status,
+                    checkpoint=candidate.checkpoint,
+                    error=candidate.error,
+                )
+                control_fields = (
+                    "run_status",
+                    "plan_revision",
+                    "checkpoint",
+                    "resume_status",
+                    "error",
+                )
+                if any(
+                    getattr(candidate, field) != getattr(validated, field)
+                    for field in control_fields
+                ):
+                    raise InvalidRunTransition("candidate does not match state-machine transition")
+            committed = candidate.model_copy(update={"revision": (current_revision or 0) + 1})
             _atomic_write(path, committed.model_dump_json().encode())
             return committed

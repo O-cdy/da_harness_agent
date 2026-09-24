@@ -6,6 +6,7 @@ from .files import (
     FileArtifactStore,
     FileConfigStore,
     FileRunStateStore,
+    IdempotencyConflict,
     PathBoundaryError,
     RevisionConflict,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "FileArtifactStore",
     "FileConfigStore",
     "FileRunStateStore",
+    "IdempotencyConflict",
     "PathBoundaryError",
     "RevisionConflict",
 ]

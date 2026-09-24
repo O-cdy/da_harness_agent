@@ -9,7 +9,7 @@ from pydantic import Field, GetJsonSchemaHandler, model_validator
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
 
-from .models import DataCompleteness, ErrorEnvelope, StrictContract
+from .models import DataCompleteness, ErrorEnvelope, Identifier, Reference, StrictContract
 
 
 class RunStatus(StrEnum):
@@ -52,10 +52,10 @@ class BranchStatus(StrEnum):
 
 
 class BranchSnapshot(StrictContract):
-    branch_id: str
-    step_id: str
+    branch_id: Identifier
+    step_id: Identifier
     status: BranchStatus
-    checkpoint: str | None = None
+    checkpoint: Reference | None = None
     resume_status: BranchStatus | None = None
 
     @model_validator(mode="after")
@@ -72,13 +72,13 @@ class BranchSnapshot(StrictContract):
 
 
 class RunSnapshot(StrictContract):
-    run_id: str
+    run_id: Identifier
     plan_revision: int = Field(ge=1)
     revision: int = Field(ge=0)
     run_status: RunStatus
     data_completeness: DataCompleteness
     report_tier: ReportTier
-    checkpoint: str | None = None
+    checkpoint: Reference | None = None
     resume_status: RunStatus | None = None
     error: ErrorEnvelope | None = None
     branches: list[BranchSnapshot] = Field(default_factory=list)

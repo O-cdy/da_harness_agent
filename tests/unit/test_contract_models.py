@@ -4,10 +4,12 @@ import pytest
 from pydantic import ValidationError
 
 from harness.core.contracts.models import (
+    REDACTED_CONTRACT_FIELDS,
     ApprovalRecord,
     ArtifactClassification,
     ArtifactEnvelope,
     ErrorEnvelope,
+    IdempotencyKey,
     NoOp,
     Plan,
     PlanStep,
@@ -25,6 +27,80 @@ def test_all_contracts_reject_extra_fields_and_unknown_schema_versions() -> None
 
     with pytest.raises(ValidationError):
         NoOp(schema_version=2, module_id="llm", reason="disabled", capability="completion")
+
+
+def test_identifiers_and_fingerprints_preserve_distinct_numeric_values() -> None:
+    first = IdempotencyKey(
+        run_id="0001",
+        plan_revision=1,
+        step_id="00123",
+        input_fingerprint="sha256:00123",
+    )
+    second = IdempotencyKey(
+        run_id="0002",
+        plan_revision=1,
+        step_id="00124",
+        input_fingerprint="sha256:00124",
+    )
+
+    assert first.run_id == "0001"
+    assert first.step_id == "00123"
+    assert first.input_fingerprint == "sha256:00123"
+    assert first != second
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("module_id", "contains space"),
+        ("module_id", "alice@example.com"),
+        ("capability", "mysql://user:pass@host/db"),
+    ],
+)
+def test_identifier_fields_reject_unstructured_or_sensitive_values(
+    field: str,
+    value: str,
+) -> None:
+    payload = {"module_id": "llm", "reason": "disabled", "capability": "completion"}
+    payload[field] = value
+    with pytest.raises(ValidationError):
+        NoOp(**payload)
+
+    with pytest.raises(ValidationError):
+        IdempotencyKey(
+            run_id="run-1",
+            plan_revision=1,
+            step_id="step-1",
+            input_fingerprint="not-a-sha256-fingerprint",
+        )
+
+
+def test_only_declared_free_content_fields_are_redacted() -> None:
+    assert (
+        frozenset(
+            {
+                "ArtifactEnvelope.input_refs",
+                "ErrorEnvelope.cause_ref",
+                "ErrorEnvelope.safe_message",
+                "NoOp.reason",
+                "Plan.acceptance_criteria",
+                "Plan.outline",
+                "QualityAssertion.summary",
+                "TraceEvent.input_refs",
+                "TraceEvent.result_summary",
+            }
+        )
+        == REDACTED_CONTRACT_FIELDS
+    )
+    noop = NoOp(
+        module_id="module-00123",
+        reason="token=super-secret",
+        capability="capability-00123",
+    )
+
+    assert noop.module_id == "module-00123"
+    assert noop.capability == "capability-00123"
+    assert noop.reason == "[REDACTED]"
 
 
 def test_plan_step_rejects_dangling_dependencies() -> None:

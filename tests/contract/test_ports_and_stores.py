@@ -20,13 +20,20 @@ from harness.core.contracts.ports import (
     ConfigPort,
     RunStateStorePort,
 )
-from harness.core.contracts.state import ReportTier, RunSnapshot, RunStatus
+from harness.core.contracts.state import (
+    InvalidRunTransition,
+    ReportTier,
+    RunSnapshot,
+    RunStatus,
+    transition_run,
+)
 from harness.core.storage.files import (
     ArtifactIntegrityError,
     ConfigMigrationError,
     FileArtifactStore,
     FileConfigStore,
     FileRunStateStore,
+    IdempotencyConflict,
     IdempotencyKey,
     PathBoundaryError,
     RevisionConflict,
@@ -94,7 +101,26 @@ def test_file_implementations_satisfy_runtime_ports(tmp_path: Path) -> None:
     assert isinstance(FileRunStateStore(tmp_path), RunStateStorePort)
 
 
-@pytest.mark.parametrize("unsafe", ["../escape.json", "/absolute.json", r"C:\absolute.json"])
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        "../escape.json",
+        "/absolute.json",
+        r"C:\absolute.json",
+        "safe.json:secret",
+        "CON",
+        "con.txt",
+        "dir/NUL.json",
+        "AUX",
+        "PRN.txt",
+        "COM1.log",
+        "LPT1",
+        "trailing.",
+        "trailing ",
+        "dir./file.json",
+        "control\x01.json",
+    ],
+)
 def test_config_paths_reject_traversal_and_absolute_paths(tmp_path: Path, unsafe: str) -> None:
     with pytest.raises(PathBoundaryError):
         FileConfigStore(tmp_path).load(unsafe, NoOp)
@@ -222,13 +248,29 @@ def test_config_migration_rejects_invalid_transformed_payload(tmp_path: Path) ->
 
 def test_artifact_put_is_idempotent_without_duplicate_side_effects(tmp_path: Path) -> None:
     store = FileArtifactStore(tmp_path)
-    first = store.put(artifact(b"first"), b"first", idem())
-    second = store.put(artifact(b"second", "artifact-2"), b"second", idem())
+    envelope = artifact(b"first")
+    first = store.put(envelope, b"first", idem())
+    second = store.put(envelope, b"first", idem())
 
     assert first == second
     assert store.get(idem()) == first
     assert store.read_payload(first) == b"first"
     assert len(list((tmp_path / "artifacts").glob("*.json"))) == 1
+
+
+def test_artifact_idempotency_key_rejects_different_envelope_or_payload(
+    tmp_path: Path,
+) -> None:
+    store = FileArtifactStore(tmp_path)
+    first = artifact(b"first")
+    store.put(first, b"first", idem())
+
+    with pytest.raises(IdempotencyConflict, match="different"):
+        store.put(artifact(b"first", "artifact-2"), b"first", idem())
+    with pytest.raises(IdempotencyConflict, match="different"):
+        store.put(artifact(b"second"), b"second", idem())
+    with pytest.raises(IdempotencyConflict, match="different"):
+        store.put(first, b"tampered", idem())
 
 
 def test_crash_tmp_is_not_committed_and_retry_recovers(
@@ -282,9 +324,70 @@ def test_run_state_store_uses_revision_compare_and_swap(tmp_path: Path) -> None:
     assert store.load("run-1") == second
 
 
+def test_run_state_store_rejects_illegal_initial_and_candidate_revision(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStateStore(tmp_path)
+    with pytest.raises(InvalidRunTransition, match="initial"):
+        store.compare_and_swap(
+            snapshot().model_copy(update={"run_status": RunStatus.RUNNING}),
+            expected_revision=None,
+        )
+    with pytest.raises(RevisionConflict, match="candidate"):
+        store.compare_and_swap(
+            snapshot(revision=7),
+            expected_revision=None,
+        )
+
+    first = store.compare_and_swap(snapshot(), expected_revision=None)
+    with pytest.raises(RevisionConflict, match="candidate"):
+        store.compare_and_swap(
+            first.model_copy(update={"revision": 0}),
+            expected_revision=1,
+        )
+
+
+def test_run_state_store_validates_transitions_and_terminal_cannot_regress(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStateStore(tmp_path)
+    current = store.compare_and_swap(snapshot(), expected_revision=None)
+
+    with pytest.raises(InvalidRunTransition):
+        store.compare_and_swap(
+            current.model_copy(update={"run_status": RunStatus.RUNNING}),
+            expected_revision=current.revision,
+        )
+
+    for target in (
+        RunStatus.PLANNING,
+        RunStatus.PLANNED,
+        RunStatus.AWAITING_C1,
+        RunStatus.PREPARING_SQL,
+        RunStatus.AWAITING_C2,
+        RunStatus.SNAPSHOTTING,
+        RunStatus.RUNNING,
+        RunStatus.VALIDATING,
+        RunStatus.RENDERING,
+        RunStatus.SEALING,
+        RunStatus.EVALUATING,
+        RunStatus.AWAITING_C3,
+        RunStatus.COMPLETED,
+    ):
+        candidate = transition_run(current, target)
+        current = store.compare_and_swap(candidate, expected_revision=current.revision)
+
+    with pytest.raises(InvalidRunTransition):
+        store.compare_and_swap(
+            current.model_copy(update={"run_status": RunStatus.PLANNING}),
+            expected_revision=current.revision,
+        )
+
+
 def test_run_ids_cannot_escape_store_root(tmp_path: Path) -> None:
-    with pytest.raises(PathBoundaryError):
-        FileRunStateStore(tmp_path).load("../run")
+    for unsafe in ("../run", "CON", "NUL.txt", "run:stream", "run.", "run ", "run\x01"):
+        with pytest.raises(PathBoundaryError):
+            FileRunStateStore(tmp_path).load(unsafe)
     assert FileRunStateStore(tmp_path).load("not-created") is None
 
 
