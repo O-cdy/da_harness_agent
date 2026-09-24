@@ -1,7 +1,7 @@
 # 20 · 数据源与接入配置（唯一定义处）
 
 > 唯一职责：定义数据源与接入配置。**本文件是数据源配置的唯一来源**，`harness/config/` 只读取本文件，不得在代码中硬编码默认值。
-> 版本 v0.3 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（§5.3 为实测登记；白名单以 `data-audit.md` §8 为准）。金额原子粒见 G-18；件数原子维见 G-17；`payment_status` / `source_name` 不过滤见 ADR-052 / ADR-053；无日历不阻断见 ADR-054；报告期 UTC 自然月见 ADR-055；双库同一连接见 ADR-056；C1/C2 见 ADR-057；净利不纳入见 ADR-058；新站同比见 ADR-059；站点/市场两粒见 ADR-060；UA 计入泛欧见 ADR-061；新老客 gid 与口径可追溯见 ADR-062；M401 量价见 ADR-063；M402 贡献度见 ADR-064；月报 SQL 时间窗见 ADR-065；产品化分期见 ADR-066。
+> 版本 v0.4 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（§5.3/§5.4 为实测登记；平台白名单以 `data-audit.md` §8 为准）。Shopify 口径见 ADR-019～065；跨平台 canonical 与 TikTok 首阶段接入见 ADR-068。
 
 ## 1. 默认接入模式（单源开关）
 
@@ -26,7 +26,7 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 
 同一 MySQL 实例 **一套连接**（host / port / user / password 在 `.env`）。事实表与维表分属两个 schema，**名字**写在 `config/profile.yaml` 的 `facts_schema` / `dims_schema`，禁止写入核心代码。查询必须 `schema.table`。可选 `MYSQL_DATABASE` 只给驱动一个默认库，不替代 profile。缺凭据或缺 schema → 显式 no-op（守则 4）。
 
-## 1.2 本地数据库表清单（待字段确认）
+## 1.2 Shopify 权威表清单
 
 | 表名 | 用途 | 在口径体系中的角色 | 字段映射状态 |
 |---|---|---|---|
@@ -44,16 +44,33 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 
 **Shopify 官方金额粒度（2026-09-23 核官方文档）**：Admin `LineItem` 的成交价挂在顾客买下的 **product variant** 上（`sku` / `originalUnitPriceSet`）。ShopifyQL `sales` 按 `product_variant_sku` 分析。这就是店铺 SKU 维，**不会**自动拆到内部 NSSKU。唯一例外是 **Shopify 原生 Product Bundles**（`requiresComponents`）：订单行变成组件，父件只在 `LineItemGroup` 里引用。本库 `shopify_sales_by_order` 与「单 variant 成交」一致，不是原生 bundle 展开。出处：[LineItem](https://shopify.dev/docs/api/admin-graphql/latest/objects/LineItem)、[LineItemGroup](https://shopify.dev/docs/api/admin-graphql/latest/objects/LineItemGroup)、[sales schema](https://shopify.dev/docs/api/shopifyql/latest/schemas/sales_revenue/sales)、[About product bundles](https://shopify.dev/docs/apps/selling-strategies/bundles)。
 
-## 1.1 平台接入范围（首期，ADR-015）
+## 1.3 TikTok 首阶段权威表（ADR-068）
+
+| 表 | 角色 | 实测规模（`COUNT(*)` @ 2026-09-24） |
+|---|---|---|
+| `bluetti_new.tiktok_sales_by_order` | 订单 × SKU 销售事实 | 20,809 行 / 20,314 单 / 6 店 / 3 币种 |
+| `bluetti_new.tiktok_returns` | 退货/退款事件主表 | 1,132 行；有 `event_date` 与退款金额 |
+| `bluetti_new.tiktok_return_items` | 退货商品行 | 1,151 行；可关联 order/line/SKU；**无退货数量字段，不得以行数代件数** |
+| `bluetti_new.tiktok_cancellations` | 取消事件主表 | 1,607 行 |
+| `bluetti_new.tiktok_cancel_items` | 取消商品行 | 1,935 行 |
+| `bluetti_new.tiktok_affiliate_orders` | Affiliate 订单与佣金 | 12,244 行 |
+| `bluetti_new.tiktok_live_performance` | LIVE 流量、互动与成交 | 18,918 行 |
+
+禁用/非 canonical 源：`tiktok_sales_by_order_0731`（旧快照）、`tb_tiktok_tableau` 与 `vw_tiktok_tableau`（展示/派生口径）。TikTok adapter 只读上述七张权威表。
+
+销售覆盖 `DE/ES/FR/GB/IT/US`、`EUR/GBP/USD`；`created_time` 从 2024-07-11 至 2026-09-23，最新同步水位 2026-09-24 08:31:41。表含 PII 与 `raw_json`，adapter 必须在 canonical 边界删除或不可逆哈希（R-92）。
+
+## 1.4 平台接入范围（ADR-015，ADR-068 修订）
 
 | 平台 | 首期状态 | 说明 |
 |---|---|---|
-| **Shopify 独立站** | **接入** | 官方口径已核实登记（`metrics.md` B1）；新老客分层可用（有顾客身份） |
+| **Shopify 独立站** | **首阶段接入** | 官方口径见 `metrics.md` B1；平台白名单 8 张 |
+| **TikTok Shop** | **首阶段接入** | canonical 销售/退款 + Affiliate/LIVE 原生模块；官方口径见 `metrics.md` B3；平台白名单 7 张 |
 | Amazon 多站点 | 未接入 | 官方口径**已登记**（`metrics.md` B2），未来接入时直接复用映射，无需重新调研 |
-| Walmart / TikTok Shop 等第三方 | 未接入 | 接入前必须先补录官方口径到 `metrics.md` B3 并附官方文档链接；**无官方口径前不得臆造映射** |
+| eBay / AliExpress / Walmart / 迪卡侬等 | 未接入 | 接入前补官方口径、adapter 与 capability；无官方口径前不得臆造映射 |
 | 自有 ERP | 未接入 | 待定 |
 
-**首期简化点**：单平台 → 不涉及跨源合并，K-01~K-05 五大跨源冲突中，只有 **K-02（是否含税/运费）** 在 Shopify 内部仍需处理（Gross / Net / Total Sales 三口径并存），其余四条在单平台下不触发但仍保留约束，防止后续接入时踩坑。
+**首阶段不是单平台**：跨源合并只允许读取 canonical；platform-native 指标不得直接相加。逐平台 capability、映射覆盖率、水位与 completeness 必须进入 manifest。
 
 **新建数据流前必须做的**：多币种/多市场依然成立 → 汇率折算（ADR-011）**仍然生效**。
 
@@ -61,7 +78,7 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 
 | 配置项 | 说明 |
 |---|---|
-| 连接凭据 | 走 env（`MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DB`），**不入库、不写文件** |
+| 连接凭据 | 走 env（`MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE`），**不入库、不写文件** |
 | 权限 | 只读账号 |
 | 门控 | **无凭据即 no-op 并显式报错，禁止静默降级到文件模式**（`AGENTS.md` 守则 4） |
 | 留痕 | 连接目标（host + db）、执行时间、SQL 全文入 `runs/<task>/sql/`。月报原料 SQL 必须带报告期时间窗，允许无 LIMIT（R-79 / ADR-065）；探索 / ad-hoc 必须有 LIMIT（R-04） |
@@ -77,26 +94,38 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 
 ## 4. 统一契约：source_manifest.json
 
-两种模式**必须产出同一份结构**，下游只认 manifest 不认来源：
+两种模式必须产出同一 Artifact Envelope；下游只认 manifest 与 canonical contract，不认来源。顶层 manifest 只做索引，`sources[]` 每个表/文件独立留证：
 
 ```json
 {
+  "manifest_version": "1.0",
   "mode": "mysql | file",
-  "source_id": "逻辑数据源标识",
-  "snapshot_hash": "数据快照 hash",
-  "row_count": 0,
-  "captured_at": "ISO8601",
+  "profile_id": "组织/profile",
   "metric_version": "metrics.md 的版本号",
-  "unmapped_fields": [],
   "data_completeness": "partial | final",
   "report_version": "v1 | v2 | ...（同报告月内递增，不可覆盖）",
-  "fx_snapshot_hash": "汇率表快照 hash",
-  "fx_rate_month": "本次实际采用的汇率月份（N+1 命中或回退当月）"
+  "sources": [{
+    "source_id": "platform.table-or-file",
+    "platform": "shopify | tiktok | ...",
+    "adapter_id": "adapter 标识",
+    "adapter_contract_version": "semver",
+    "schema_fingerprint": "hash",
+    "query_hash": "hash",
+    "snapshot_hash": "hash",
+    "row_count": 0,
+    "time_range": {"min": "ISO8601", "max": "ISO8601"},
+    "watermark": "ISO8601",
+    "completeness": "partial | final",
+    "capabilities": [],
+    "unmapped_fields": []
+  }],
+  "fx": {"snapshot_hash": "hash", "rate_month": "YYYY-MM"}
 }
 ```
 
 `data_completeness = partial` 表示报告月尚未过完、数据不完整（汇率通常走回退）；`final` 表示次月重生成、数据完整且已能用 N+1 汇率（ADR-013）。
 **同报告月的 partial 与 final 版本并存**，重生成产出新 `report_version`，不覆盖旧版本。
+任一必需平台水位未到报告截止时间时，顶层只能是 `partial`，并在报告给出逐平台覆盖率；禁止用上期快照补齐（ADR-068 / R-93）。
 
 ## 5. 字段 → 内部口径映射表
 
@@ -153,7 +182,7 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 | 字段 | 类型 | 用途 / 映射到内部指标 |
 |---|---|---|
 | `sale_date` | date | 销售归属日（ShopifyQL day）。**月份归属用本列**（R-34）。**报告期 = UTC 自然月**（ADR-055） |
-| `shop_name` / `site` / `shop_domain` | varchar | 店铺 / 站点（站点 19 个：US/AU/EU/CA/UK/DE/JP/FR/IT/ES/BR/CL/KR/PH/MX/ZA/NG/IE/NZ/SA） |
+| `shop_name` / `site` / `shop_domain` | varchar | 店铺 / 站点（`COUNT(DISTINCT site)` = **21** @ 2026-09-24：AU/BR/CA/CL/DE/ES/EU/FR/IE/IT/JP/KR/MX/NG/NZ/PH/SA/UA/UK/US/ZA） |
 | `currency` | varchar | **原币币种**（15 种）→ 必须走 G-10 四元组双留档 |
 | `order_name` / `sku` / `quantity` | varchar/int | 订单号 / 销售 SKU / 件数 → M103 = `COUNT(DISTINCT order_name)`（ADR-049） / M104 |
 | `gross_sales` | decimal | 商品原价额 → M101 GMV 基准 |
@@ -236,7 +265,7 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 **目标表 `bluetti_new.market_goal`**（916 行）：`所属部门 / 市场 / 销售目标 / 年月 / 站点 / 实际销售额 / 目标完成率`
 → ⚠ **实际维度是「年月 × 站点」（+部门/市场），无品类维度**；`销售目标` 单位 = **CNY 万元**（**ADR-020 已定案**，须 ×10000 显式换算，R-22），2026-09 合计 5,796.9 万元；2022 年目标全为 NULL；`实际销售额` 列**全为 NULL**，不可用于交叉验证。
 
-**其他已存在但未接入**：`tiktok_sales_by_order` 等 TikTok 系列、`shared_data.aba_asin_sku对照`（Amazon ASIN↔SKU，1,540 行）、`shared_data.product_parameters`（155 行商品参数）。
+**其他已存在但未接入**：`shared_data.aba_asin_sku对照`（Amazon ASIN↔SKU，1,540 行）、`shared_data.product_parameters`（155 行商品参数）。TikTok 系列已由 ADR-068 接入，见 §1.3 / §5.4。
 
 #### 三套 Shopify 订单表的关系（B-10 实测，2026-09-22）
 
@@ -262,6 +291,24 @@ default_datasource_mode: mysql   # 可选值：mysql | file
 | **C-02** | `tableau_sales` 站点口径不一致（US/CA 净额、其他总额） | 与 ADR-012「不含运费」冲突，禁止作为内部指标源 |
 | ~~C-03~~ | ~~目标表实际维度无品类，单位未确认~~ **已决策（ADR-020）** | 维度=年月×站点；单位 CNY 万元，×10000 显式换算（R-22） |
 | ~~C-04~~ | ~~`refunds_adjustments` 正负成对，处理方式待定~~ **已定性 2026-09-22（ADR-022）** | 官方定义 = 计算与实际退款的**差额**（对账科目），非退款额本身；折算后恒为负；**须纳入**使 A+F 对齐财务口径，但必须组内取净额 + 折算后汇总（R-25/R-26） |
+
+## 5.4 TikTok 字段 → canonical 映射（2026-09-24 实测）
+
+| canonical | TikTok 来源 | 处理 |
+|---|---|---|
+| order key | `shop_id + order_id` | 再加 `platform=tiktok` 构成全局键 |
+| order created time | `created_time` | canonical 下单时点；`sale_date` 实测等于 paid date，不用于 M101–M104 时点 |
+| platform-native GMV time | `paid_time` | 仅 PN-TIKTOK-001 等原生指标 |
+| product key | `seller_sku` | 先统一字符排序/规范化，再接 NSSKU；158/166 命中，未命中进桶 |
+| gross amount | `sku_subtotal_before_discount` | 不含税运；取消/样品/赠品过滤 |
+| net before refund | `sku_subtotal_after_discount` | 退款另从 event 表按发生月冲减 |
+| quantity | `quantity` | 取消/样品/赠品不进商业 M104 |
+| gift/sample/cancel | `is_gift` / `is_sample_order` / `cancelled_time` 或取消事件 | 赠品保留单列；样品和取消筛除 |
+| refund event | `tiktok_returns.event_date` + `refund_subtotal` | 冲 M102；`refund_shipping_fee/refund_tax` 不进商品净额 |
+| refund item | `tiktok_return_items` | `order_line_item_id/sku_id/seller_sku` 仅作商品归因；无数量字段，M207b unsupported |
+| cancellation | `tiktok_cancellations` + `tiktok_cancel_items` | 用于剔除与诊断；其退款金额不得二次冲 M102 |
+| customer | 无可用 canonical capability | PII 字段与 raw_json 禁入；首阶段不算 TikTok M501–M507 |
+| Affiliate/LIVE | 对应两张原生表 | 只输出 platform-native；归因窗口按官方来源 |
 
 ## 6. 已知风险
 

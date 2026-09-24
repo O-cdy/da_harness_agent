@@ -1,8 +1,17 @@
 # 20 · 指标字典：内部口径（唯一定义处）
 
 > 唯一职责：定义内部指标口径。**本文件是内部指标口径的唯一来源**，任何模块、报告、脚本引用指标时必须指向本文件的条目编码。
-> 结构：**A 内部标准口径（canonical）** → **B 平台官方口径（溯源用）** → **C 平台→内部映射** → **D 待确认清单**
-> 版本 v0.3 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**部分生效** —— A/B/C 段已确认条目可作硬约束；① ⛔ M201–M206、M208/M209（R-42 / ADR-058）；② 已确认含 M401（ADR-063）、M402（ADR-064）
+> 结构：**A canonical** → **B platform-native 官方口径** → **C 平台映射** → **D 待确认清单**
+> 版本 v0.4 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**部分生效** —— 已确认且 adapter capability 完整的条目可作硬约束；TikTok 官方口径与映射见 ADR-068。
+
+## 指标类型与状态（ADR-068）
+
+| 类型 | 编码约定 | 用途 | 正式报告 |
+|---|---|---|---|
+| `canonical` | `Mxxx` | 跨平台统一分析 | 已确认且 capability 完整时可用 |
+| `platform-native` | `PN-<PLATFORM>-xxx` | 保留平台官方定义 | 只进对应平台章节/附录，不跨平台相加 |
+| `provisional` | `PX-<run>-xxx` | `ask` 临时探索 | 只进探索草稿；须留定义、SQL/代码、快照 |
+| `diagnostic` | `DQ-xxx` | 数据质量、覆盖率、对账 | 只进数据说明/证据包 |
 
 ---
 
@@ -12,13 +21,13 @@
 |---|---|---|---|
 | G-01 | 记账本位币 | **CNY（人民币）**。所有报告默认折算到 CNY | 已确认（ADR-011） |
 | G-02 | 汇率 | **用户提供的月度固定汇率**，来源二选一：① MySQL `shared_data.exchange_rate` 表（优先）；② 用户 Excel 提供（与表同构）。**N+1 规则**：M 月报告用 M+1 月汇率；若 M+1 月未结束、库中无该月汇率，**回退用 M 月当月汇率**。所用的汇率月份与数值必须写入证据包 | 已确认（ADR-011） |
-| G-03 | 收入确认时点 | **已确认**（ADR-010，2026-09-22）：按下单时点（order time）；退款/取消在**发生月**冲减，不回溯调整原月 | 已确认 |
-| G-04 | 时区 | **首期统一 UTC**。日/月切分认 `sale_date`（已是 date，R-34）。禁止按站点本地时区重切。改本地时区须另立 ADR | 已确认（ADR-055） |
+| G-03 | 收入确认时点 | **按 canonical 下单事件**；退款/取消在**发生月**处理，不回溯调整原月。Shopify adapter 映射 `sale_date`，TikTok adapter 映射 `created_time`；平台官方支付/发货时点指标留在 platform-native | 已确认（ADR-010 + ADR-068） |
+| G-04 | 时区 | **首期统一 UTC**。canonical 日/月切分认 adapter 输出的 `order_created_date`；Shopify 来源 `sale_date`，TikTok 来源 `created_time`。禁止按站点本地时区重切 | 已确认（ADR-055 + ADR-068） |
 | G-05 | 财月日历 | **首期自然月**。禁止 4-5-4。改财月须另立 ADR | 已确认（ADR-055） |
 | G-06 | 跨口径相加 | **禁止。** 不同平台/不同口径的指标不得直接相加，必须先按 C 节映射到内部口径 | 已定（ADR-009 / R-05；非报告指标） |
 | G-07 | 缺数处理 | 无数据或口径未定义的指标，输出「无数据 / 口径待确认」，**禁止估算填充** | 已定（ADR-009 / R-03；非报告指标） |
 | G-08 | 报告版本不可变 | **已生成的报告版本永不修改**（退款/取消在发生月冲减即可实现）。这是「重跑一致、可复现」的硬前提。注意区分：**重跑**（同输入再跑一次）必须一致；**重生成**（数据窗口变完整、汇率规则变化）产出的是**新版本**，不是修改旧版本 —— 见 G-12 | 已确认（ADR-010，边界由 ADR-013 修订） |
-| G-09 | 取消与退款的区别 | **取消**：订单作废，不计入订单数与件数，金额不计入 GMV。取消只认 `cancelled_at IS NOT NULL`，**不按 `payment_status` 当取消**（ADR-052）。**退款**：订单按下单月计入订单数，退款金额在**退款发生月**冲减净销售额，不改变原下单月的订单数与 GMV | 已确认（ADR-010 + ADR-052） |
+| G-09 | 取消与退款的区别 | **取消**：订单作废，不计入订单数/件数/GMV，取消事件字段由 adapter 映射（Shopify=`cancelled_at`；TikTok=取消事件/`cancelled_time`）。**退款**：订单保留在原下单月，退款金额在发生月冲减净销售额，不改变原下单月订单数与 GMV | 已确认（ADR-010 + ADR-052 + ADR-068） |
 | G-10 | 原币双留档 | 任何折算金额必须同时留档四元组：`amount_original` + `currency` + `fx_rate` + `amount_base`（另记 `fx_rate_month`，即实际采用 N+1 还是当月）。否则无法对账 | 已确认（ADR-011） |
 | G-11 | 本位币例外 | 用户特别要求、且报告**不涉及多市场多币种**时，可改用本位币（原币）出报告；此时报告必须标注「未折算，原币口径」 | 已确认（ADR-011） |
 | G-13 | 与现有报表的差异 | 内部口径（M102）**不等于**公司现有 tableau 报表口径 —— tableau 用主表 `net_sales`（已回溯扣退款）。两者差额 = 跨月退款的时间归属差异。报告须在「数据说明」章节给出差额对账，不得直接混用 | 已确认（ADR-019） |
@@ -31,6 +40,8 @@
 | G-21 | 报告标注分层 | 主报告标注须分优先级，数量合理，禁止堆砌。**P0**（改变数字解读，触发才出）：未匹配退款不冲 M102、套件未拆/未映射金额桶、与 tableau 差额（G-13）、**无日历时异动章 `calendar_missing`（ADR-054）**、**新站不参与同比（ADR-059）**。同类全篇只出现一次，放「数据说明」；图表最多脚注编号。核因细节进 `runs/` 证据包。不设死条数上限 | 已确认（ADR-050 + ADR-054 + ADR-059） |
 | G-22 | 站点与市场两粒 | **站点** = `site` 一店一码；**市场** = 站点分组，按需展示。`site=EU` 不是欧盟市场。**「欧盟」= 泛欧经营区**（ADR-061），已确认成员 = EU/DE/FR/IT/ES/IE/**UA**，名单只在 profile。UK 不进该组。禁止站点与其所属市场混加。一个站点只属一个市场。未分组进「未分组」。市场达成由成员站点加总，不用空站点的市场目标行。市场同比走同店（ADR-059） | 已确认（ADR-060 + ADR-061） |
 | G-23 | 口径可追溯 | 每条「已确认」G/M/R 必须能追到 ADR + 本文件条目。profile 参数必须有 `source`。报告数字必须能追到指标编码 + SQL/代码 + 快照 hash。状态「已定」不得进报告 | 已确认（ADR-062） |
+| G-24 | 平台映射与能力 | canonical 指标只消费 adapter 输出；平台字段、状态、时点与能力在 C 节和 adapter manifest 映射。能力缺失或映射未确认时，该平台分支进入 `awaiting_alignment`，不得把空值当 0 | 已确认（ADR-068） |
+| G-25 | 多平台完整度 | 每个平台独立记录水位、hash 与 completeness。必需平台未齐只出带覆盖率的 partial；齐备后出新 final；禁止沿用上期数据补齐 | 已确认（ADR-068） |
 
 ---
 
@@ -42,11 +53,11 @@
 
 | 编码 | 指标 | 定义 | 公式 | 单位 | 状态 |
 |---|---|---|---|---|---|
-| M101 | GMV 成交总额 | 按下单时点统计的商品成交金额 | 源字段 `gross_sales`（**原币**）；**不扣折扣、不扣退款、不含税与运费**；剔除 `cancelled_at IS NOT NULL` 的取消单。**不按 `payment_status` 过滤**（ADR-052）。**不按 `source_name` 过滤**；已转正草稿计入（ADR-053） | 本位币 | 已确认（不含运费 ADR-012；字段级实现 ADR-019；支付状态 ADR-052；草稿 ADR-053） |
-| M102 | 净销售额 Net Revenue | 客户实际为商品支付的金额 | **Σ(`gross_sales` + `discounts`)**（`discounts` 已为负数），剔除取消单；**不按 `payment_status` 过滤**（ADR-052）；**不按 `source_name` 过滤**（ADR-053）。**退款不从本表扣**，改由退款表按 `refund_created_at` 在**退款发生月**冲减（G-03 / G-08 / ADR-019）。连接键 = `shop_name` + `name`↔`order_name`（ADR-050）。**未匹配退款（销售表无行）不冲本指标**。⚠ **退款口径必须显式声明**（R-27）：`计算`= `refunds_lineitems.refund_subtotal`；`财务`= 计算 + `refunds_adjustments` 组内净额（须折算后汇总，R-25/R-26）；`实际到账`= `shopify_orders_mongo_refunds` 且 `status='success'` AND `kind='refund'`。**主口径已定（ADR-023）**：整体/站点/达成率用「财务」口径，商品维度拆解用「计算」口径，差额单列不可归因 | 本位币 | 已确认（ADR-010 + ADR-019 + ADR-022 + ADR-023 + ADR-050 + ADR-052 + ADR-053） |
-| M103 | 订单数 Orders | 有效订单数：**取消单剔除；退款单保留在原下单月**（退款只冲金额不减订单数，见 G-09） | `COUNT(DISTINCT order_name)`。主表无 `order_id`；禁止用行级 `id` 或退款表 `order_id`（ADR-049）。**不按 `payment_status` 过滤**（ADR-052）。**不按 `source_name` 过滤**（ADR-053） | 单 | 已确认（ADR-010 + ADR-049 + ADR-052 + ADR-053） |
+| M101 | GMV 成交总额 | 按 canonical 下单时点统计的**商业商品原价额** | `SUM(item_gross_amount)`；不扣折扣/退款，不含税与运费；剔除取消、样品及非商业赠送。平台字段映射见 C 节 | 本位币 | 已确认（ADR-012 + ADR-019 + ADR-052/053 + ADR-068） |
+| M102 | 净销售额 Net Revenue | 商业商品成交净额，退款按事件发生月冲减 | `SUM(item_gross_amount + seller_discount_amount) - SUM(refund_item_subtotal)`；取消、样品、非商业赠送剔除；税与运费不进入。Shopify 财务差额与 TikTok 退款映射见 C 节 | 本位币 | 已确认（ADR-010/019/022/023/050/052/053 + ADR-068） |
+| M103 | 订单数 Orders | 有效商业订单数；取消与样品单剔除，退款单保留原下单月 | `COUNT(DISTINCT platform + shop_id + order_id)`；平台原始订单键由 adapter 映射 | 单 | 已确认（ADR-010 + ADR-049 + ADR-068） |
 | ~~M102b~~ | ~~净销售额（毛口径临时方案）~~ | ⛔ **已作废**（ADR-028 关闭 B-13，退款两表已补入首期白名单） | ~~Σ(`gross_sales` + `discounts`)，不冲减退款~~ —— 曾因退款表被排除而设；**M102 恢复 ADR-019 / ADR-023 定案口径**，本条目仅作留痕，不得实现 | 本位币 | **作废**（ADR-028） |
-| M104 | 件数 Units | 售出商品件数，按下单时点；取消单件数剔除，退货件数在**退货发生月**冲减 | **两套分标注（ADR-045）**。① 店铺 SKU / 站点 = `Σ(quantity) WHERE quantity > 0 AND gross_sales <> 0`（R-30 v2）。② NSSKU / 型号 = G-17。① ≠ Σ②。报告按需展示，禁止混加。**不按 `payment_status` 过滤**（ADR-052）。**不按 `source_name` 过滤**（ADR-053） | 件 | 已确认（ADR-010 + R-30 v2 + ADR-045 + ADR-052 + ADR-053） |
+| M104 | 件数 Units | 商业售出件数，按下单时点；取消/样品/赠品剔除，退货件数在退货发生月冲减 | canonical `SUM(commercial_quantity)`；当前 profile 的 NSSKU/型号展开仍遵守 G-17 与两套件数分标注。平台过滤见 C 节 | 件 | 已确认（ADR-010 + ADR-045 + ADR-052/053 + ADR-068） |
 | M105 | 客单价 AOV | 平均每单金额 | 净销售额 / 订单数（M102 / M103） | 本位币 | 已确认（ADR-062，派生） |
 | M106 | 件单价 ASP | 平均每件金额 | **站点 / 店铺 SKU** = 净销售额 / M104（店铺 SKU 件数）。**型号维**仅对金额已进入该有效型号的店铺 SKU（G-16 单有效型号）计算：分子 = 这些行的净销售额；分母 = 同一批行的 G-17 件数。禁止用该型号全部件数（含套件成员件数）作分母。报告型号维按 `产品型号_统一` 合并展示（ADR-048），同家族下上述行加总，仍遵守本条。套件未拆、未映射、配件降级 NS 不出型号 ASP。NSSKU 维默认禁止 ASP（G-18）；本条不开配件 NS 维 ASP（ADR-047） | 本位币 | 已确认（站点 ADR-010；型号维 ADR-047 / ADR-048） |
 
@@ -62,8 +73,8 @@
 | ~~M206~~ | ~~仓储费率~~ | ⛔ **首期不纳入设计范围**（ADR-027 / R-42） | ~~仓储费 / 净销售额~~ | **不纳入** |
 | ~~M208~~ | ~~净利~~ | ⛔ **首期不纳入设计范围**（ADR-058 / R-42） | ~~毛利 − 全部费用（佣金+广告+履约+仓储+关税+其他；关税已在 COGS，此处不重复）~~；公式仍登记于 ADR-012，**仅作留档** | **不纳入**（依赖 M201 与费用，无数据源） |
 | ~~M209~~ | ~~净利率~~ | ⛔ **首期不纳入设计范围**（ADR-058 / R-42） | ~~净利 / 净销售额~~ | **不纳入**（依赖 M208） |
-| M207a | 退货率（金额口径） | 退款金额占比 | 退款额 / 净销售额；退款取 `refunds_lineitems.refund_subtotal`（ADR-023 计算口径）。**未匹配退款不进分子**（ADR-050）。**首期不出原因维**（ADR-051） | 已确认（ADR-014 + ADR-028 + ADR-050 + ADR-051） |
-| M207b | 退货率（件数口径） | 退货件数占比 | `refunds_lineitems.refund_quantity` / 件数（M104）。**未匹配退款不进分子**（ADR-050）。**首期不出原因维**（ADR-051） | 已确认（ADR-014 + ADR-028 + ADR-050 + ADR-051） |
+| M207a | 退货率（金额口径） | canonical 商品退款金额占比 | `refund_item_subtotal / M102`；Shopify 映射 `refunds_lineitems.refund_subtotal`，TikTok 映射 `tiktok_returns.refund_subtotal`。未匹配退款不进分子并单列诊断；不出原因维 | 已确认（ADR-014/023/028/050/051 + ADR-068） |
+| M207b | 退货率（件数口径） | canonical 退货件数占比 | `refund_quantity / M104`；Shopify 映射 `refunds_lineitems.refund_quantity`。TikTok 当前 `return_items` **无数量字段**，首阶段 capability=unsupported，禁止用行数代替件数 | 已确认（ADR-014/028/050/051 + ADR-068） |
 | M210 | 转化率（订单口径） | **内部统一按订单算**，不按件算；Amazon `Unit Session Percentage` 仅作平台原生指标展示，**不参与跨品牌对比**。⚠ 数据源 = GA4 视图 `month_basic_data`，**必须同源** | **主口径 = `transactions / sessions`**（GA4 同源，2026-08 US 0.364%）；辅助 = `checkouts / sessions`（2.285%）；对账项 = GA4 `transactions` / Shopify 订单数（US 36.6%，合计 52.4%）。**禁止跨源配比**（R-37 / ADR-025）。覆盖 2025-06-09 起 | 已确认（ADR-014 + ADR-025，K-03/K-04） |
 
 > ⛔ **「首期不纳入设计范围」≠「暂不输出」**：M201–M206、M208、M209 在首期**不定义、不建模、不留空占位、不在报告中留标题**（R-42 / ADR-058）。
@@ -76,15 +87,15 @@
 
 | 编码 | 指标 | 定义 | 公式 | 状态 |
 |---|---|---|---|---|
-| M501 | 下单顾客数 Customers | 期内下过单的去重顾客数（**仅计有 `shopify_customer_gid` 的已识别顾客**） | `COUNT(DISTINCT shopify_customer_gid)` | 已确认（ADR-017 + ADR-062） |
-| M502 | 新客数 New Customers | 期内**首次**下单的已识别顾客 | **该 gid 的 `MIN(sale_date)` 落在报告期内**（R-39）。⚠ **禁止用 `customer_created_at`**（账号注册时间）——实测会把注册未下单账号算成新客，误差 9.2 倍 | 已确认（ADR-017 + R-39 + ADR-062；对齐 Shopify「新顧客：僅限首購顧客」） |
-| M503 | 老客数 Returning Customers | 期内下单且此前已有历史订单的已识别顾客 | 首单日 < 报告期 且 期内有下单。实测 2026-08：新客 7,940 + 老客 3,183 = 活跃 11,123 ✓ 闭合 | 已确认（ADR-017 + R-39 + ADR-062；对齐 Shopify「回頭客：曾經購買過的顧客」） |
-| M504 | 回头客率 | 老客占已识别顾客比例 | 老客数 / 下单顾客数（2026-08 实测 3,183/11,123 = 28.6%） | 已确认（ADR-017 + ADR-062） |
-| M505 | 新/老客销售额 | 分别统计新客与老客贡献的净销售额 | 按 `shopify_customer_gid` 分组聚合；⚠ **须先按币种折算再汇总**（R-24） | 已确认（ADR-017 + ADR-062） |
-| M506 | 新/老客客单价 | 分别统计 AOV，用于对比客层质量 | 净销售额 / 对应订单数；⚠ 须折算（R-24） | 已确认（ADR-017 + ADR-062） |
-| **M507** | **顾客可识别率（数据质量）** | 有 `shopify_customer_gid` 的订单占比；低于阈值时新老客结论不可信 | **主键 = `shopify_customer_gid`**（R-35；`customer_exists_flag` 有 2,139 行 NULL 不可用）。实测 = 1,287,312 / 1,289,508 = **99.83%**（原按 flag 登记的 99.996% 已作废） | 已确认（ADR-017 + R-35 + ADR-062） |
+| M501 | 下单顾客数 Customers | 期内下过单的去重已识别顾客数；身份只在平台/店铺命名空间内有效 | `COUNT(DISTINCT customer_subject_hash)`；Shopify 映射 gid，TikTok 首阶段 capability=unsupported | 已确认（ADR-017 + ADR-062 + ADR-068） |
+| M502 | 新客数 New Customers | 期内**首次**下单的已识别顾客 | 该 `customer_subject_hash` 的 `MIN(order_created_date)` 落在报告期。Shopify 禁用注册时间 `customer_created_at`；TikTok 首阶段 identity capability=unsupported | 已确认（ADR-017 + R-39 + ADR-062 + ADR-068） |
+| M503 | 老客数 Returning Customers | 期内下单且此前已有历史订单的已识别顾客 | 同一平台/店铺命名空间内首单日 < 报告期且期内有下单。Shopify 实测闭合；TikTok 首阶段不计算 | 已确认（ADR-017 + R-39 + ADR-062 + ADR-068） |
+| M504 | 回头客率 | 老客占已识别顾客比例 | 老客数 / 下单顾客数；仅 identity capability 可用的平台计算（Shopify 2026-08 实测 28.6%） | 已确认（ADR-017 + ADR-062 + ADR-068） |
+| M505 | 新/老客销售额 | 分别统计新客与老客贡献的净销售额 | 按 `customer_subject_hash` 分组；须先按币种折算。仅 identity capability 可用的平台参与 | 已确认（ADR-017 + ADR-062 + ADR-068） |
+| M506 | 新/老客客单价 | 分别统计 AOV，用于对比客层质量 | 对应客层净销售额 / 对应 canonical 订单数；须折算，且仅 identity capability 可用的平台计算 | 已确认（ADR-017 + ADR-062 + ADR-068） |
+| **M507** | **顾客可识别率（数据质量）** | 能生成 `customer_subject_hash` 的订单占比；低于阈值时客户结论不可信 | canonical 判定 subject hash 非空。Shopify adapter 原始主键=`shopify_customer_gid`，实测 99.83%；TikTok 首阶段 unsupported | 已确认（ADR-017 + R-35 + ADR-062 + ADR-068） |
 
-**主键规则（原 D-10，ADR-062 修订）**：站点内以 **`shopify_customer_gid`** 为唯一标识。禁止用 `customer_id` 或 email 当站点内主键。
+**主键规则（ADR-062 / ADR-068）**：canonical 只存“平台 + 店铺命名空间 + 不可逆 subject hash”。Shopify adapter 输入为 `shopify_customer_gid`；禁止用 email/手机号自动跨平台合并。TikTok 首阶段不声明 identity capability。
 **统计范围（R-40）**：客户指标默认**站点内统计** —— gid 按站点唯一（实测 2,229,529 个 gid 均只属 1 个站点），跨站点不共享；9.2% 的邮箱跨多站点，全局客户数须按 `email` 归并并显式标注，不得与站点内口径混用。
 **游客单处理（关键）**：`shopify_customer_gid` 为空的订单**单独归为「未识别」客群，禁止计入新客**（R-18 / ADR-062）—— 否则老客用游客身份复购会被算成新客，系统性高估新客、低估回头客率。未识别订单的金额仍计入总销售额，只是在客户分层中单列。
 **报告要求**：新老客章节必须同时给出 M507 可识别率；低于阈值时须标注「样本存在偏差，结论仅供参考」。
@@ -93,7 +104,7 @@
 
 | 编码 | 指标 | 公式 | 状态 |
 |---|---|---|---|
-| M301 | 目标达成率 | 实际值(CNY 元) / (目标值 × 10000)；**分子分母口径必须一致** —— 目标为**净销售额口径**（M102，CNY **万元**），实际值取 M102（CNY 元），换算因子 10000 必须显式（R-22）。✅ **B-13 已由 ADR-028 关闭**：退款两表补入首期白名单，分子分母同为 M102 净销售额，**口径一致**（无需再标注高估） | 已确认（ADR-016 + ADR-020 + ADR-028） |
+| M301 | 目标达成率 | 实际值(CNY 元) / (目标值 × 10000)；分子分母均为 M102。当前目标 capability 仅 Shopify profile 可用；TikTok 无目标时不得补 0。Shopify 退款两表已在其 platform pack，口径一致 | 已确认（ADR-016 + ADR-020 + ADR-028 + ADR-068） |
 | M302 | 同比 YoY | (本期 − 去年同期) / 去年同期。**仅够龄站**：完整月数 ≥ 12（锚点月 = 该站 `MIN(sale_date)` 所在 UTC 月，月差相对报告期）。不够龄不出 YoY。合计同比 = 同店（只含够龄站）；新站当期进规模、不进同比分子分母。禁止分母填 0。名单由数据算，禁止写死站点码（ADR-059） | 已确认（ADR-059） |
 | M303 | 环比 MoM | (本期 − 上期) / 上期。新站可出；上期为空则不出，禁止填 0。停运仍按 R-32 排除同比与环比 | 已确认（ADR-059 收窄新站） |
 
@@ -150,22 +161,37 @@
 | Buy Box Percentage | 页面浏览量中展示你的 offer 的占比（**对 page views，不是对竞品胜率**） |
 | Session Percentage | 该 ASIN 有浏览的 sessions / 全部产品总 sessions；**是目录内部占比，不是竞争指标** |
 
-### B3 第三方 / 其他平台
+### B3 TikTok Shop（platform-native）
 
-`[待补充]` —— 接入具体平台后按同样格式登记，必须附官方文档链接与检索日期。
+> 官方来源检索于 **2026-09-24**；以下页面标注适用于美国站。其它地区启用前必须核对应地区版本与生效日期。
+
+| 编码 | 官方指标 / 规则 | 官方定义摘要 | 实现状态与来源 |
+|---|---|---|---|
+| PN-TIKTOK-001 | GMV | 按**支付时间**；商品标价×件数 + 运费 − seller-funded discount − platform-funded discount − tax；**包含取消与退款订单** | 可从订单表映射；仅平台原生。[Shop analytics](https://seller-us.tiktok.com/university/essay?knowledge_id=813364865828654) |
+| PN-TIKTOK-002 | AOV | GMV / orders | 可实现；分子分母均遵守 TikTok 原生 GMV。[同上](https://seller-us.tiktok.com/university/essay?knowledge_id=813364865828654) |
+| PN-TIKTOK-003 | LIVE GMV | LIVE 商品带来的支付订单金额，含取消与退款；按支付时间 | `tiktok_live_performance` 字段可用，归因定义核验后启用。[同上](https://seller-us.tiktok.com/university/essay?knowledge_id=813364865828654) |
+| PN-TIKTOK-004 | Affiliate LIVE/Video GMV | 创作者内容商品链接点击后 **14 天**内归因的支付订单，含退货退款 | `tiktok_affiliate_orders` 可用；只进原生模块。[同上](https://seller-us.tiktok.com/university/essay?knowledge_id=813364865828654) |
+| PN-TIKTOK-005 | Direct / Indirect attributed GMV | Direct=内容交互中直接购买；Indirect=内容影响后延迟购买；升级后按 Affiliate/Seller + 内容类型拆解，间接归因使用 last-touch | 已登记，启用前核表字段能否区分。[Sales Metrics Breakdown Logic Upgrade](https://seller-us.tiktok.com/university/essay?knowledge_id=6494954580231950) |
+| PN-TIKTOK-006 | LIVE CTOR | SKU orders / product clicks × 100% | 表字段可用；按 LIVE 粒度。[LIVE Traffic Playbook](https://seller-us.tiktok.com/university/essay?knowledge_id=3175988075644686) |
+| PN-TIKTOK-007 | Free / Refundable Sample | Free sample 对创作者免费；Refundable sample 先购买，达到销量条件后退款；Sample ROI 的分母随类型不同 | 只作样品原生分析，均不进 canonical 商业销售。[Sample Analytics](https://seller-us.tiktok.com/university/essay?knowledge_id=8670842792888078) |
+| PN-TIKTOK-008 | Settlement Net Sales | Gross sales + gross sales refund + seller discount + seller discount refund；退款销售额为负数 | 已登记未启用，首阶段 M102 使用 return event 表。[Settlement Report](https://seller-us.tiktok.com/university/essay?knowledge_id=2336057241700098) |
+
+### B4 第三方 / 其他平台
+
+`[待补充]` —— Amazon 以外的平台接入前按同样格式登记，并附官方链接、适用地区、检索日期、版本/生效日期与实现状态。
 
 ---
 
 ## C. 平台 → 内部映射
 
-| 内部指标 | Shopify 来源 | Amazon 来源 | 转换要点（易错） |
-|---|---|---|---|
-| M101 GMV | Gross Sales | OPS | Amazon OPS 未扣退货，Shopify Gross Sales 未扣折扣；**两者都不是"成交总额"的同一含义**，须按 G-03 统一时点后重算 |
-| M102 净销售额 | Net Sales | OPS − 退款（**退款需另取退货报告**，OPS 本身不含） | Amazon 侧退款通常不在 Business Reports 内，须额外接入 |
-| M103 订单数 | Orders（用订单状态剔除退货） | 需从订单报告取，**Business Reports 只有 Total Order Items 与 Units** | 不要把 Order Items 当订单数 |
-| M104 件数 | Net Quantity Sold | Units Ordered（**未扣退货**） | 两侧是否扣退货不一致，必须对齐后再比 |
-| M105 AOV | 官方 AOV 不含订单成立后调整 | 无直接字段，需自算 | 内部统一用 净销售额 / 订单数 |
-| M210 转化率 | Orders / Sessions | **亚马逊官方 Unit Session % 按件算**，与内部按订单算不同 | 跨品牌对比时必须用内部口径重算，不可直接引用平台值 |
+| 内部指标 | Shopify adapter | TikTok adapter（ADR-068） | Amazon 来源 | 转换要点 |
+|---|---|---|---|---|
+| M101 GMV | `gross_sales`；取消按 `cancelled_at` 剔除 | `sku_subtotal_before_discount`；时点=`created_time`；取消/样品/赠品剔除 | OPS | TikTok 官方 GMV 是 PN-TIKTOK-001，不等于 M101 |
+| M102 净销售额 | `gross_sales + discounts`，退款=`refunds_lineitems + adjustments` | `sku_subtotal_after_discount`，按 `tiktok_returns.event_date` 冲 `refund_subtotal`；取消退款不二次冲 | OPS − 退款报告 | 商品净额不含运费/税；退款必须按事件月 |
+| M103 订单数 | `order_name` | `order_id`；取消/样品剔除 | 需订单报告 | canonical 主键含 platform+shop，禁止跨店碰撞 |
+| M104 件数 | R-30 店铺 SKU 口径；退款件数另供 M207b | 销售取 `quantity`，取消/样品/赠品剔除；`return_items` 无数量字段，不支持 TikTok M207b | Units Ordered | 平台原生 items sold 或退货行数不得替代 canonical 件数 |
+| M105 AOV | M102/M103 | M102/M103；PN-TIKTOK-002 另存 | 无直接字段 | 原生 AOV 与 canonical AOV 分开 |
+| M210 转化率 | GA4 `transactions/sessions` | 当前无统一 traffic capability；TikTok LIVE CTOR 仅 PN-TIKTOK-006 | Unit Session % 按件 | 不同分子/分母不得比较 |
 
 ### C1 五大口径冲突（必须显式处理）
 
@@ -179,7 +205,7 @@
 
 ---
 
-## D. 待确认清单（需业务校正后方可作为硬约束）
+## D. 已关闭口径清单（保留修订链路）
 
 | 编号 | 待确认项 | 影响指标 |
 |---|---|---|
@@ -190,9 +216,9 @@
 | ~~D-04~~ | ~~COGS 边界~~ **已确认 2026-09-22**：到岸成本法 = 采购成本 + 头程物流 + 关税；FBA 配送/尾程/仓储归费用项 | M201、M202（ADR-012） |
 | ~~D-05~~ | ~~退货率口径~~ **已确认 2026-09-22**：双轨并列 M207a（金额）+ M207b（件数） | M207a/M207b（ADR-014） |
 | ~~D-06~~ | ~~转化率口径~~ **已确认 2026-09-22**：统一按订单口径 | M210（ADR-014） |
-| ~~D-10~~ | ~~客户唯一标识口径~~ **已确认 2026-09-22**：以 `customer_id` 为主键；游客单（`customer_id` 为空）单独归「未识别」，不混入新客；新增 M507 可识别率作为数据质量指标 | M501–M507（ADR-017） |
-| ~~D-07~~ | ~~目标值来源与口径~~ **已确认 2026-09-22**：用户提供目标表，维度「月 × 站点 × 品类」，口径=净销售额；走文件导入或 DB 表，快照 hash 入 manifest | M301（ADR-016） |
-| ~~D-08~~ | ~~各平台实际接入清单与字段可用性~~ **已确认 2026-09-22**：首期仅 Shopify 独立站；字段见 `data-sources.md` §5.3（ADR-015） | 范围 |
+| ~~D-10~~ | ~~客户唯一标识口径~~ **已被 ADR-062/068 修订**：Shopify 原始主键为 gid；canonical 为平台/店铺命名空间内 subject hash；游客单单列未识别 | M501–M507 |
+| ~~D-07~~ | ~~目标值来源与口径~~ **已被 ADR-020 修订**：目标表维度为年月 × 站点（无品类），口径=M102，快照 hash 入 manifest | M301 |
+| ~~D-08~~ | ~~各平台实际接入清单与字段可用性~~ **ADR-068 修订 2026-09-24**：首阶段 Shopify + TikTok；均先过 adapter → canonical。字段见 `data-sources.md` §5.3/§5.4（原 ADR-015 仅 Shopify） | 范围 |
 | ~~D-11~~ | ~~组合品成交额是否拆到 NSSKU~~ **已确认 2026-09-23**：金额留在店铺 SKU 不拆；只有件数/路径拆到 NS（G-17 / G-18） | M101 / M102 / M104 / M106（ADR-034） |
 | ~~D-12~~ | ~~多型号套件金额如何进入型号维~~ **已确认 2026-09-23**：单型号跟该型号走；多型号进「套件未拆」；件数按各 NS 型号记（ADR-038） | M101 / M102 / M106 |
 | ~~D-13~~ | ~~品类取哪一列~~ **已确认 2026-09-23**：品类 = `产品类型`；`产品型号_统一` 只作家族标签（ADR-041） | 品类维 |
@@ -205,10 +231,10 @@
 | ~~D-20~~ | ~~站点 M104 是否等于 Σ NS 件数~~ **已确认 2026-09-23**：不等于；两套分标注；NSSKU 有型号时与型号维同一套（ADR-045） | M104 / G-17 |
 | ~~D-21~~ | ~~型号维是否出 ASP~~ **已确认 2026-09-23**：只对金额已进入该型号的单有效型号计算；套件未拆 / 未映射 / 配件降级 NS 不出型号 ASP；站点 ASP 用 M102 / M104（ADR-047） | M106 |
 | ~~D-22~~ | ~~型号维对外主键用 `产品型号` 还是 `产品型号_统一`~~ **已确认 2026-09-23**：JOIN 用 `产品型号`；对外呈现用 `产品型号_统一`（ADR-048） | 型号维 |
-| ~~D-23~~ | ~~M103 用 `order_name` 还是 `order_id`~~ **已确认 2026-09-23**：`COUNT(DISTINCT order_name)`（ADR-049） | M103 |
+| ~~D-23~~ | ~~M103 原始订单键~~ **ADR-068 收窄**：Shopify adapter=`order_name`（ADR-049）；TikTok adapter=`order_id`；canonical=`platform + shop_id + adapter_order_id` | M103 |
 | ~~D-24~~ | ~~退款如何关联销售表；未匹配是否冲 M102~~ **已确认 2026-09-23**：连接键 `shop_name`+`name`↔`order_name`；未匹配不冲 M102 / 不进 M207；不把补拉当闭环；标注服从 G-21（ADR-050） | M102 / M207 |
 | ~~D-25~~ | ~~`financialStatus` 是否等于退款原因~~ **已确认 2026-09-23**：不当退款原因；首期退货只出 M207a/b，不出原因维（ADR-051） | M207 |
-| ~~D-26~~ | ~~是否按 `payment_status` 过滤~~ **已确认 2026-09-23**：首期不按支付状态过滤；取消只认 `cancelled_at`（ADR-052） | M101–M104 |
+| ~~D-26~~ | ~~Shopify 是否按 `payment_status` 过滤~~ **已确认 2026-09-23**：Shopify 不按支付状态过滤，取消认 `cancelled_at`；其他平台由 adapter 映射取消事件（ADR-052/068） | M101–M104 |
 | ~~D-27~~ | ~~草稿单是否计入~~ **已确认 2026-09-23**：已转正草稿计入；不按 `source_name` 过滤（ADR-053） | M101–M104 |
 | ~~D-28~~ | ~~无大促日历是否阻断规模章~~ **已确认 2026-09-23**：不阻断规模/效率/达成；异动须标 `calendar_missing`；禁止整报失败（ADR-054） | R-12 / M401 |
 | ~~D-29~~ | ~~G-04 时区 / G-05 财月~~ **已确认 2026-09-24**：UTC + 自然月 × `sale_date`（ADR-055） | G-04 / G-05 |
@@ -218,7 +244,7 @@
 | ~~D-33~~ | ~~新站是否出同比~~ **已确认 2026-09-24**：不足 12 个完整自然月不参与 M302；可出 M303 并标「新站」；合计同比同店（ADR-059） | M302 |
 | ~~D-34~~ | ~~EU 是否可当四国汇总~~ **已确认 2026-09-24**：站点 EU ≠ 欧盟市场；可按市场展示；欧盟已确认成员 EU/DE/FR/IT/ES/IE（ADR-060） | G-22 |
 | ~~D-35~~ | ~~UA 是否计入欧盟市场~~ **已确认 2026-09-24**：计入；「欧盟」= 泛欧经营区，不是成员国清单（ADR-061） | G-22 |
-| ~~D-36~~ | ~~新老客主键~~ **已确认 2026-09-24**：站点内 = `shopify_customer_gid`；空 gid 未识别（ADR-062） | M501–M507 |
+| ~~D-36~~ | ~~新老客主键~~ **ADR-068 修订**：Shopify adapter 输入 gid；canonical 使用平台/店铺命名空间内 subject hash；空值未识别 | M501–M507 |
 | ~~D-37~~ | ~~M105 是否升格~~ **已确认 2026-09-24**：M102/M103 派生，已确认（ADR-062） | M105 |
 | ~~D-38~~ | ~~M401 量价用哪套件数~~ **已确认 2026-09-24**：店铺 SKU 件数配 M102；禁止 NS 件数进本公式（ADR-063） | M401 |
 | ~~D-39~~ | ~~M402 贡献度如何拆~~ **已确认 2026-09-24**：ΔM102 按互斥层拆；站点/品类/度电带/新老客；禁止混加市场与站点；禁止 NS 件数加权（ADR-064） | M402 |
@@ -226,5 +252,4 @@
 | ~~D-41~~ | ~~记忆层是否单独成模块~~ **已确认 2026-09-24**：三类文件持久化；Session/向量预留；上期数字不得当本期（ADR-066） | 记忆层 |
 | ~~D-42~~ | ~~是否做成单一经营分析 agent~~ **已确认 2026-09-24**：否；`run` 与 `ask` 并列；月报只是第一份剧本（ADR-067） | 产品入口 |
 
-> **校正方式**：直接修改本文件对应条目，并把状态从 `[待确认]` 改为 `已确认`（保留修改日期）。
-> 本文件的任何修改都需在 `docs/90-decisions/ADR.md` 追加记录。
+> 后续如出现新待对齐项，先进入 `awaiting_alignment` 并追加 ADR；已关闭条目只保留修订链路，不作为当前待办。

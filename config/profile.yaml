@@ -15,10 +15,12 @@
 # ============================================================
 
 profile_id: default
+organization_id: default-org
+schema_version: 1
 profile_name: 跨境电商 · 便携储能（当前业务背景）
 created_at: 2026-09-22
-updated_at: 2026-09-24          # ADR-067：核心与场景解耦
-status: draft    # draft | active | archived（仍未实跑校准，实跑后转 active）
+updated_at: 2026-09-24          # ADR-068：跨平台 canonical + TikTok 首阶段
+status: draft    # draft 只允许 dry-run/partial，不得发布 final；实跑校准后转 active（ADR-068）
 
 # ---------- 1. 币种与汇率 ----------
 currency:
@@ -34,20 +36,44 @@ currency:
 # ---------- 2. 数据源与平台 ----------
 datasource:
   default_mode: mysql            # 权威默认值（ADR-001；不在 .env 中重复定义）
-  platforms:                     # 首期接入范围（ADR-015）
-    - shopify
+  platforms:                     # 首阶段接入范围（ADR-068）
+    shopify:
+      enabled: true
+      adapter_id: shopify
+      adapter_contract_version: "1.0"
+      capabilities: [orders, refunds, products, traffic, targets, customer_identity]
+      rule_pack: platform:shopify
+      whitelist:
+        - shopify_sales_by_order
+        - refunds_lineitems
+        - refunds_adjustments
+        - market_goal
+        - exchange_rate
+        - month_basic_data
+        - 产品型号度数范围
+        - nssku对应映射表
+    tiktok:
+      enabled: true
+      adapter_id: tiktok
+      adapter_contract_version: "1.0"
+      capabilities: [orders, refunds, products, affiliate, live]
+      unsupported_capabilities: [traffic_canonical, targets, customer_identity, return_quantity]
+      rule_pack: platform:tiktok
+      whitelist:
+        - tiktok_sales_by_order
+        - tiktok_returns
+        - tiktok_return_items
+        - tiktok_cancellations
+        - tiktok_cancel_items
+        - tiktok_affiliate_orders
+        - tiktok_live_performance
+      native_modules: [affiliate, live]
+      non_canonical_sources: [tiktok_sales_by_order_0731, tb_tiktok_tableau, vw_tiktok_tableau]
   reserved_platforms:            # 官方口径已登记、暂未接入
     - amazon
-  # 首期白名单：**仅此 8 张可读**（R-41 / ADR-027 + ADR-028）。扩大须另立 ADR。
-  first_phase_whitelist:
-    - shopify_sales_by_order     # 销售事实
-    - refunds_lineitems          # 退款行项（官方 API 活表，非 mongo）
-    - refunds_adjustments        # 退款差额 = Shopify OrderAdjustment
-    - market_goal                # 目标（年月 × 站点，CNY 万元）
-    - exchange_rate              # 汇率（N+1）
-    - month_basic_data           # GA4 漏斗（视图）
-    - 产品型号度数范围            # 度数区间维度
-    - nssku对应映射表             # SKU → NSSKU
+    - ebay
+    - aliexpress
+    - decathlon
   first_phase_excluded:          # 权威但首期不启用（后续需用时另立 ADR）
     - shopify_customers_by_site  # 新老客字段主表已含，无需此表
     - repurchase_user_sku_stats
@@ -57,7 +83,7 @@ datasource:
     - market_goal_bonus
   facts_schema: bluetti_new      # ADR-056：事实表所在 schema；禁止写进核心代码
   dims_schema: shared_data       # ADR-056：维表 / 汇率 / 映射所在 schema
-  source: docs/20-domain/data-sources.md#1
+  source: docs/20-domain/data-sources.md#1.2-1.4
 
 # ---------- 3. 商品维度体系（公司特定！） ----------
 # 层级 = 店铺 SKU → NSSKU → 型号 → 品类/度数（G-19 / G-20）。金额原子 = 店铺 SKU（G-18）。
@@ -107,17 +133,37 @@ revenue:
   refund_treatment: current_month_writeoff   # 发生月冲减，不回溯
   cancel_treatment: exclude      # 取消单不计入订单数/件数/GMV
   history_immutable: true        # 报告版本不可变（G-08）
-  order_key: order_name            # M103，ADR-049
-  versioning: partial_final      # 月内=partial，次月重生成=final，两版本并存
-  # 退款主口径（ADR-023）：整体=财务口径，商品维度拆解=计算口径
-  refund_caliber:
-    primary: financial           # financial | calculated | settled（R-27）
-    dimension_breakdown: calculated   # 差额不可归因，单列展示
-    primary_source: shopify_sales_by_order   # 官方 API 拉取的表
-    refund_sources: [refunds_lineitems, refunds_adjustments]
-    avoid_sources: [shopify_orders_mongo, shopify_orders_mongo_total]
-    join_keys: [shop_name, order_name]   # ADR-050
-    unmatched_skip_net_sales: true       # 未匹配不冲 M102
+  versioning: partial_final      # 任一必需平台未齐=partial；齐备后新 final，不覆盖
+  platform_overrides:
+    shopify:
+      order_key: order_name
+      order_time_field: sale_date
+      refund_caliber:
+        primary: financial
+        dimension_breakdown: calculated
+        primary_source: shopify_sales_by_order
+        refund_sources: [refunds_lineitems, refunds_adjustments]
+        avoid_sources: [shopify_orders_mongo, shopify_orders_mongo_total]
+        join_keys: [shop_name, order_name]
+        unmatched_skip_net_sales: true
+      payment_status_filter: null
+      source_name_filter: null
+      refund_reason_field: null
+    tiktok:
+      order_key: order_id
+      order_time_field: created_time
+      native_gmv_time_field: paid_time
+      gross_field: sku_subtotal_before_discount
+      net_before_refund_field: sku_subtotal_after_discount
+      sample_action: exclude
+      cancel_action: exclude
+      gift_action: retain_separate
+      refund_event_table: tiktok_returns
+      refund_item_table: tiktok_return_items
+      refund_time_field: event_date
+      refund_product_amount_field: refund_subtotal
+      cancel_refund_double_writeoff: false
+      source: docs/20-domain/data-sources.md#5.4
   # 退款实现率对账（需读 shopify_orders_mongo_refunds.status，唯一能判断退款是否成功）
   # 默认关闭 —— 主口径不依赖它；开启后仅用于报告对账区，不进净销售额计算（env 门控 / 守则 4）
   refund_reconciliation:
@@ -125,10 +171,7 @@ revenue:
     env_override: HARNESS_ENABLE_REFUND_RECONCILIATION   # env 未设置则以本默认值为准
     source: shopify_orders_mongo_refunds
     success_filter: "status='success' AND kind='refund'"
-  source: docs/20-domain/metrics.md#G-03-G-08-G-09-G-12-M102-M103
-  payment_status_filter: null          # ADR-052：不过滤；改过滤须另立 ADR
-  source_name_filter: null             # ADR-053：已转正草稿计入；不过滤
-  refund_reason_field: null            # ADR-051：不当 financialStatus
+  source: docs/20-domain/metrics.md#G-03-G-08-G-09-G-12-M101-M104
 
 # ---------- 5. 成本与费用 ----------
 # ⛔ 首期**不纳入设计范围**（ADR-027 决策二 / R-42）：不定义、不建模、不留空占位。
@@ -178,7 +221,12 @@ targets:
 # ---------- 8. 客户分层 ----------
 customer:
   enabled: true
-  identity_key: shopify_customer_gid   # ADR-062 / R-35；禁止 customer_id
+  namespace: platform_shop
+  pii_mode: irreversible_hash
+  cross_platform_merge: confirmed_identity_map_only
+  platform_identity:
+    shopify: shopify_customer_gid
+    tiktok: unsupported
   unidentified_bucket: true      # 空 gid 归「未识别」，禁止计入新客
   quality_metric: M507           # 顾客可识别率
   source: docs/20-domain/metrics.md#M501-M507
@@ -199,7 +247,12 @@ report:
   annotation_layered: true          # G-21 / ADR-050：P0 优先，禁止堆砌
   timezone: UTC                     # ADR-055 / G-04
   calendar: natural_month           # ADR-055 / G-05；禁止 4-5-4
-  date_field: sale_date             # R-34
+  date_field: canonical.order_created_date
+  layout: canonical_overview_plus_platform_sections
+  platform_native_appendix: true
+  per_platform_coverage: true
+  final_requires_all_required_platforms: true
+  carry_forward_missing_platform: false
   c1_c2_auto_same_template: true    # ADR-057：同 playbook 同口径首次放行后自动
   c3_always: true                   # ADR-057：C3 每次都审
   source: docs/20-domain/metrics.md#G-04-G-05-G-21
@@ -258,3 +311,40 @@ entrypoints:
   ask: true
   ask_alias_of_monthly: false
   source: docs/10-architecture.md#13
+
+# ---------- 18. 规则包（ADR-068 / R-85） ----------
+rule_packs:
+  always: [core, domain:ecommerce]
+  by_platform:
+    shopify: platform:shopify
+    tiktok: platform:tiktok
+  by_playbook:
+    monthly-business-review: playbook:monthly-business-review
+  source: docs/30-constraints/rules.md#规则包与作用域
+
+# ---------- 19. 指标治理（ADR-068 / R-84） ----------
+metric_governance:
+  formal_allowed: [canonical, platform-native]
+  exploratory_allowed: [provisional, diagnostic]
+  provisional_in_formal_report: false
+  platform_native_cross_platform_sum: false
+  source: docs/20-domain/metrics.md#指标类型与状态
+
+# ---------- 20. 对齐与运行状态（ADR-068 / R-88 / R-94） ----------
+alignment:
+  unresolved_action: pause_affected_branch
+  initial_run_state: created
+  unresolved_transition: awaiting_alignment
+  continue_independent_branches: true
+  publish_formal_before_resolved: false
+  ask_one_question_at_a_time: true
+  source: docs/10-architecture.md#16
+
+# ---------- 21. 安全与隐私（ADR-068 / R-92） ----------
+privacy:
+  pii_default: deny
+  canonical_identity: irreversible_hash
+  trace_full_results: false
+  raw_json_in_artifacts: false
+  original_pii_requires_explicit_capability: true
+  source: docs/10-architecture.md#17

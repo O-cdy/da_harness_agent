@@ -1,7 +1,7 @@
-# Skills 契约（SK-01 ~ SK-07）
+# Skills 契约（SK-01 ~ SK-08）
 
 > 唯一职责：定义「可复用能力单元」的输入 / 输出 / 依赖口径 / 参数来源。
-> 版本 v0.1 | 最后更新 2026-09-24 | 状态：**已规划，未实现**（SK-07 记忆装配为首期薄封装；Session/向量不实现）
+> 版本 v0.2 | 最后更新 2026-09-24 | 状态：**已规划，未实现**（SK-07 记忆装配为首期薄封装；SK-08 为平台原生扩展；Session/向量不实现）
 > 与 playbook 的关系见 `docs/10-architecture.md` §1.1：playbook 编排 skills；**Skill 禁止依赖某一 playbook id**（ADR-067 / R-82）。
 
 ## 通用约定（所有 Skill 适用）
@@ -9,7 +9,7 @@
 | 项 | 约定 |
 |---|---|
 | 参数来源 | 业务特定值一律从 `config/profile.yaml` 读，**禁止硬编码公司名 / 表名 / 币种**（守则 7.5）。**禁止读取「当前是否经营月报」**（R-82） |
-| 口径来源 | 指标必须引用 `docs/20-domain/metrics.md` 条目号，不得自造口径 |
+| 口径来源 | 正式指标必须引用 MetricRegistry；provisional 必须有运行内定义与证据。禁止 Skill 直读平台物理表 |
 | 数字产出 | 只能由 SQL / Python 计算；LLM 产出的数字一律无效（`10-architecture.md` §3） |
 | 留档 | 每个 skill 执行完写 `runs/<task>/artifacts/<skill_id>.json` + 代码留档 |
 | 失败处理 | 阻断级失败 → 中止并落 `errors/E-NNNN`，禁止静默跳过（R-xx 与 Validator 约定） |
@@ -28,7 +28,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 输入 | 维度树（站点 / 品类 / 度电带 / 新老客）+ 各切片 ΔM102 |
+| 输入 | `ctx.dimensions` 声明的互斥维度 + 各切片 Δmetric；月报首阶段可用站点/品类/度电带/新老客 |
 | 输出 | 各切片贡献度排序 + 覆盖率 |
 | 依赖口径 | M402 / R-06 / R-78（ADR-064） |
 | 断言 | 各切片贡献之和 = 总 ΔM102；套件未拆 / 未映射 / 未识别必须出桶；禁止市场与站点混加；禁止 NS 件数加权 |
@@ -48,17 +48,17 @@
 
 | 项 | 内容 |
 |---|---|
-| 输入 | 中间结果 + 源数据 |
+| 输入 | `plan.metric_refs` 对应的中间结果 + canonical 工件 + 当前 eval overlay |
 | 输出 | 断言报告（对账 / 量纲 / 空值率 / 同比环比合理性） |
-| 依赖口径 | M101–M507；G-13；G-23（数字须能追到指标编码 + SQL） |
-| 断言 | 任一阻断级失败 → 不得出报告；同比须排除不够龄站（R-74），禁止分母填 0 |
+| 依赖口径 | 仅 `plan.metric_refs` + manifest eval overlay；G-23/G-24 |
+| 断言 | 任一阻断级失败 → 不得发布正式报告；禁止把月报 M401/M402 或 M101–M507 全集强制到其他场景 |
 | 参数 | `profile.yaml: currency`（量纲阈值） |
 
 ## SK-05 报告框架
 
 | 项 | 内容 |
 |---|---|
-| 输入 | `runs/` 证据包 |
+| 输入 | `runs/` 证据包 + Artifact Envelope |
 | 输出 | `report.md`（ADR-008）+ `charts.html` |
 | 依赖口径 | `plan.outline`（由当前 playbook 或 `ask` 的计划提供，禁止写死经营月报六章，ADR-067）；只消费证据包，不直连数据源 |
 | 断言 | 报告中每个数字可在证据包中追溯 |
@@ -78,8 +78,18 @@
 
 | 项 | 内容 |
 |---|---|
-| 输入 | 任务 id、playbook 指纹、可选上期 run 路径 |
+| 输入 | 任务 id、完整审批指纹、可选上期 run 路径 |
 | 输出 | `MemoryBundle`（口径索引、错误注入列表、上期指纹/线索；不含上期指标数值） |
 | 依赖口径 | R-80 / ADR-066；G-23 |
 | 断言 | 输出中不得出现可作为本期事实的上期金额/件数；Session/向量关闭时字段为显式 `noop` |
 | 参数 | `profile.yaml: memory` |
+
+## SK-08 平台原生分析
+
+| 项 | 内容 |
+|---|---|
+| 输入 | adapter 暴露的 platform-native facts + 官方指标元数据 + capability |
+| 输出 | 带 `platform / native_metric_id / official_source / region / definition_version` 的结果 |
+| 依赖口径 | ADR-068 / R-84 / R-87；TikTok PN-TIKTOK-001～008 |
+| 断言 | 不得并入 canonical 合计；官方来源、适用地区、检索日期、归因窗口与实现状态缺一即不可启用 |
+| 参数 | `profile.yaml: datasource.platforms.<id>.native_modules` |

@@ -2,7 +2,7 @@
 
 > 唯一职责：记录架构与口径决策（ADR）。本文件是**决策全文的唯一来源**，`PROJECT_STATUS.md` 第 7 节只放索引表，不复制正文。
 > 规则：新决策追加在末尾，编号递增；已有决策**不得修改或删除**，需要变更时新增一条修订型 ADR。
-> 版本 v0.1（ADR-001 ~ ADR-067） | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效（只增不改）**
+> 版本 v0.1（ADR-001 ~ ADR-068） | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效（只增不改）**
 
 ---
 
@@ -1344,3 +1344,40 @@ USD 单币种：46,257,435 / 2,182,040 → 4.72%
 **被否决**：只做 `harness monthly`；编排器内嵌月报九步；把用户行为/广告先塞进月报章节；等 S7 才露出提问入口。
 
 **影响**：`10-architecture.md` §8/§9/§11/§13；`rules.md` R-82；`playbooks/index.md`；skills 通用约定；charter；`profile.yaml`；`PROJECT_STATUS.md`。不写 `harness/` 代码。
+
+---
+
+## ADR-068 · 2026-09-24 · 跨平台 canonical 内核 + TikTok 首阶段真实接入
+
+**背景**：用户明确产品后续须覆盖独立站、Amazon、eBay、AliExpress、TikTok Shop、迪卡侬等电商平台。复核发现现规划虽声明“通用 harness”，但规则、指标、评估、白名单和目录仍绑定 Shopify/月报；若直接开工 S0，会把平台差异焊进核心。经 19 轮单问题对齐，用户确认首阶段以 TikTok 真实数据作为第二平台验证，并要求官方口径像 Shopify 一样留档可溯源。
+
+**实测与官方证据（2026-09-24）**：
+- `bluetti_new` 已有 TikTok 销售、退货/退款、取消、Affiliate、LIVE 七张活表；退款表有 `event_date` 与金额，故无需新增外部退款源。
+- TikTok `seller_sku` 166 个，现有 NSSKU 映射命中 158 个；两个 schema 排序规则不同，适配器须先规范化字符串。
+- TikTok Seller Center 官方定义：GMV 按**支付时间**，包含取消与退款；Affiliate LIVE/Video GMV 有 14 天点击归因；2026 年销售归因升级为 Direct/Indirect + last-touch。来源：
+  - https://seller-us.tiktok.com/university/essay?knowledge_id=813364865828654
+  - https://seller-us.tiktok.com/university/essay?knowledge_id=6494954580231950
+  - https://seller-us.tiktok.com/university/essay?knowledge_id=8670842792888078
+
+**决策**：
+1. **平台适配边界**：所有平台先经 `PlatformAdapter` 映射到统一 canonical 数据模型；Playbook、Skill、Metric、Reporter 默认只读 canonical，不感知平台表名。平台原生分析走显式 extension，不得绕过 adapter 直读。
+2. **指标四态**：`canonical` 用于统一分析；`platform-native` 保留平台官方定义且不得跨平台直接相加；`provisional` 允许 `ask` 探索但必须留定义/SQL/快照并禁止进入正式报告；`diagnostic` 只用于质量与对账。provisional 经用户确认 + ADR 方可转 canonical。
+3. **规则四层**：`core / domain / platform / playbook` 按 scope 组合加载。现有 Shopify 表白名单、退款、商品映射规则移入 Shopify platform pack；月报时间窗、章节与审批规则移入 monthly playbook pack，禁止全局误伤其它场景。
+4. **机器可读注册**：Playbook 必须有 manifest（id、contract_version、steps、metric_refs、skill_refs、rule_packs、required_capabilities、time_scope、outline、approval_policy）；Markdown 只作人读说明。Registry 禁止解析 Markdown 生成执行计划。
+5. **平台能力矩阵**：每个 adapter 声明订单、退款、客户、流量、广告、目标、Affiliate、LIVE 等 capability 与覆盖期。缺能力不得估算；未对齐映射进入 `awaiting_alignment`，每次只问一个问题。受影响分支暂停，其余分支可留证据；阻断项关闭前不得发布正式报告。
+6. **指标与审批注册**：新增 `MetricPort / MetricRegistry`，计算器只按 metric id 解析实现。审批复用指纹至少包含组织/profile、playbook manifest、metric/rule pack、adapter/schema、SQL 模板与数据源版本；改任一项必须重审。
+7. **身份与租户隔离**：客户身份默认按平台/店铺命名空间隔离；只有经确认的身份映射表才允许跨平台合并。平台官方定义可全局共享，业务口径、映射和审批只在当前组织/profile 复用。
+8. **TikTok 首阶段接入**：首阶段真实接入七张权威表：`tiktok_sales_by_order`、`tiktok_returns`、`tiktok_return_items`、`tiktok_cancellations`、`tiktok_cancel_items`、`tiktok_affiliate_orders`、`tiktok_live_performance`。`tiktok_sales_by_order_0731`、`tb_tiktok_tableau`、`vw_tiktok_tableau` 不作为 canonical 源。
+9. **TikTok canonical 映射**：M101/M102 继续遵守已确认的**下单时点**，取 `created_time`；TikTok 官方按 `paid_time` 的 GMV 仅作 platform-native。样品单筛除；取消单筛除且取消退款不得二次冲减；赠品记录保留并单列但不进 M101–M106；退货按 `tiktok_returns.event_date` 冲减 M102，商品归因用 `tiktok_return_items`。商品退款取 `refund_subtotal`，不把运费/税并入商品净销售额。
+10. **TikTok 商品映射**：未映射 SKU 仍计入平台与跨平台总销售，在 NSSKU/型号/品类拆解中进入“未映射”桶，并同时展示 SKU 覆盖率与金额覆盖率。
+11. **首阶段报告**：经营月报采用“跨平台 canonical 总览 + Shopify/TikTok 分平台章节 + platform-native 附录”。TikTok Affiliate/LIVE 首阶段作为只读原生模块，先核官方口径与归因窗口再启用，不参与 canonical 合计。
+12. **官方口径留档**：TikTok 当前可见的销售、订单、件数、退款、样品、Affiliate、LIVE 等官方定义均登记来源 URL、适用地区、检索日期与实现状态；只有字段和数据核验通过者标“可实现”，其余标“已登记未启用”。
+13. **PII 默认拒绝**：买家昵称/用户名、收件人姓名、电话、地址及含 PII 的 `raw_json` 禁止进入 canonical、trace、证据包和报告。客户分析只用“平台命名空间 + 不可逆哈希”标识；原始 PII 访问须单独授权。
+14. **多平台完整度**：每个平台独立快照、hash、水位与 completeness。任一必需平台未到报告截止时间，只能生成标明逐平台覆盖率的 `partial`；全部到齐后生成新 `final`，禁止沿用上期数据补齐或覆盖旧版本。
+15. **生产运行契约补齐**：S0 同时冻结 Run 状态机（含 `awaiting_alignment`、取消、恢复、幂等）、逐源 Artifact Envelope、`ErrorEnvelope`、Tool capability、SQL AST 只读校验、trace 脱敏 schema、配置 schema/version/migration。R-81 被本条收窄：稳定 Port + 注册类型 + no-op 必须先在，但不为每个未来平台盲建空目录。
+
+**被否决**：Playbook 直读平台表；把 TikTok GMV 当 canonical M101/M102；规则整包全局加载；遇到映射缺口静默跳过；跨组织复用业务口径；用当前状态近似退款；把 Affiliate/LIVE 并入跨平台合计；所有预留能力都铺空目录。
+
+**修订关系**：扩展 ADR-009/015/066/067；首阶段平台由“仅 Shopify”修订为“Shopify + TikTok”；ADR-027/028 的“8 张表”收窄为 **Shopify platform pack 白名单**，不再是 harness 全局白名单；ADR-049 的 `order_name` 收窄为 Shopify adapter 键，canonical 订单键由本 ADR 定义；R-41/R-81 已据此修订。未写 `harness/` 代码。
+
+**影响**：`00-charter.md`、`10-architecture.md`、`metrics.md`、`data-sources.md`、`data-audit.md`、playbooks、skills、`rules.md`、`eval-rubric.md`、`profile.yaml`、`PROJECT_STATUS.md`。
