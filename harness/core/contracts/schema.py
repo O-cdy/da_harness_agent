@@ -12,12 +12,13 @@ from .models import (
     NoOp,
     Plan,
     PlanStep,
+    QualityAssertion,
     SourceManifest,
     SourceManifestEntry,
     StrictContract,
     TraceEvent,
 )
-from .state import RunSnapshot
+from .state import BranchSnapshot, RunSnapshot
 
 _CONTRACTS: tuple[type[StrictContract], ...] = (
     NoOp,
@@ -28,7 +29,9 @@ _CONTRACTS: tuple[type[StrictContract], ...] = (
     PlanStep,
     Plan,
     ApprovalRecord,
+    BranchSnapshot,
     RunSnapshot,
+    QualityAssertion,
     SourceManifestEntry,
     SourceManifest,
 )

@@ -2,10 +2,13 @@ import pytest
 
 from harness.core.contracts.models import DataCompleteness, ErrorEnvelope
 from harness.core.contracts.state import (
+    BranchSnapshot,
+    BranchStatus,
     InvalidRunTransition,
     ReportTier,
     RunSnapshot,
     RunStatus,
+    transition_branch,
     transition_run,
 )
 
@@ -131,3 +134,221 @@ def test_paused_run_can_be_cancelled_or_failed() -> None:
         safe_message="safe",
     )
     assert transition_run(paused_again, RunStatus.FAILED, error=error).error == error
+
+
+def test_one_branch_can_pause_while_an_independent_branch_keeps_run_active() -> None:
+    run = make_snapshot(RunStatus.RUNNING).model_copy(
+        update={
+            "branches": [
+                BranchSnapshot(
+                    branch_id="platform-a",
+                    step_id="extract-a",
+                    status=BranchStatus.RUNNING,
+                ),
+                BranchSnapshot(
+                    branch_id="platform-b",
+                    step_id="extract-b",
+                    status=BranchStatus.RUNNING,
+                ),
+            ]
+        }
+    )
+
+    updated = transition_branch(
+        run,
+        "platform-a",
+        BranchStatus.AWAITING_ALIGNMENT,
+        checkpoint="checkpoint:a",
+    )
+
+    paused, independent = updated.branches
+    assert updated.run_status is RunStatus.RUNNING
+    assert paused.resume_status is BranchStatus.RUNNING
+    assert paused.checkpoint == "checkpoint:a"
+    assert independent.status is BranchStatus.RUNNING
+
+
+def test_paused_branch_resumes_only_from_its_checkpoint() -> None:
+    run = make_snapshot(RunStatus.RUNNING).model_copy(
+        update={
+            "branches": [
+                BranchSnapshot(
+                    branch_id="platform-a",
+                    step_id="extract-a",
+                    status=BranchStatus.RUNNING,
+                )
+            ]
+        }
+    )
+    paused = transition_branch(
+        run,
+        "platform-a",
+        BranchStatus.WAITING_DATA,
+        checkpoint="checkpoint:a",
+    )
+    assert paused.run_status is RunStatus.WAITING_DATA
+    assert paused.resume_status is RunStatus.RUNNING
+
+    with pytest.raises(InvalidRunTransition):
+        transition_branch(paused, "platform-a", BranchStatus.COMPLETED)
+
+    resumed = transition_branch(
+        paused,
+        "platform-a",
+        BranchStatus.RUNNING,
+        checkpoint="checkpoint:a",
+    )
+    assert resumed.branches[0].resume_status is None
+    assert resumed.branches[0].checkpoint == "checkpoint:a"
+    assert resumed.run_status is RunStatus.RUNNING
+    assert resumed.resume_status is None
+
+
+def test_run_axes_and_error_identity_are_consistent() -> None:
+    with pytest.raises(ValueError, match="formal_final"):
+        make_snapshot().model_copy(
+            update={"report_tier": ReportTier.FORMAL_FINAL}
+        ).__class__.model_validate(
+            {
+                **make_snapshot().model_dump(),
+                "report_tier": ReportTier.FORMAL_FINAL,
+            }
+        )
+
+    error = ErrorEnvelope(
+        code="E_RUNTIME",
+        category="runtime",
+        severity="error",
+        retryable=False,
+        module_id="executor",
+        run_id="other-run",
+        plan_revision=1,
+        safe_message="safe",
+    )
+    with pytest.raises(ValueError, match="run_id"):
+        RunSnapshot(
+            run_id="run-1",
+            plan_revision=1,
+            revision=0,
+            run_status=RunStatus.FAILED,
+            data_completeness=DataCompleteness.PARTIAL,
+            report_tier=ReportTier.DRY_RUN,
+            error=error,
+        )
+
+    with pytest.raises(ValueError, match="plan_revision"):
+        RunSnapshot(
+            run_id="other-run",
+            plan_revision=2,
+            revision=0,
+            run_status=RunStatus.FAILED,
+            data_completeness=DataCompleteness.PARTIAL,
+            report_tier=ReportTier.DRY_RUN,
+            error=error,
+        )
+
+    with pytest.raises(ValueError, match="only failed"):
+        make_snapshot(RunStatus.RUNNING).__class__(
+            **{
+                **make_snapshot(RunStatus.RUNNING).model_dump(),
+                "error": error.model_copy(update={"run_id": "run-1"}),
+            }
+        )
+
+
+def test_branch_pause_requires_checkpoint_and_branch_ids_are_unique() -> None:
+    with pytest.raises(ValueError, match="checkpoint"):
+        BranchSnapshot(
+            branch_id="branch-1",
+            step_id="step-1",
+            status=BranchStatus.WAITING_DATA,
+            resume_status=BranchStatus.RUNNING,
+        )
+
+    branch = BranchSnapshot(
+        branch_id="branch-1",
+        step_id="step-1",
+        status=BranchStatus.RUNNING,
+    )
+    with pytest.raises(ValueError, match="duplicate branch_id"):
+        RunSnapshot(
+            run_id="run-1",
+            plan_revision=1,
+            revision=0,
+            run_status=RunStatus.RUNNING,
+            data_completeness=DataCompleteness.PARTIAL,
+            report_tier=ReportTier.DRY_RUN,
+            branches=[branch, branch],
+        )
+
+
+def test_branch_and_run_pause_shapes_reject_inconsistent_snapshots() -> None:
+    with pytest.raises(ValueError, match="active resume_status"):
+        BranchSnapshot(
+            branch_id="branch-1",
+            step_id="step-1",
+            status=BranchStatus.WAITING_DATA,
+            checkpoint="checkpoint:1",
+            resume_status=BranchStatus.COMPLETED,
+        )
+    with pytest.raises(ValueError, match="cannot carry resume_status"):
+        BranchSnapshot(
+            branch_id="branch-1",
+            step_id="step-1",
+            status=BranchStatus.RUNNING,
+            resume_status=BranchStatus.PENDING,
+        )
+    with pytest.raises(ValueError, match="resume_status"):
+        RunSnapshot(
+            run_id="run-1",
+            plan_revision=1,
+            revision=0,
+            run_status=RunStatus.WAITING_DATA,
+            data_completeness=DataCompleteness.PARTIAL,
+            report_tier=ReportTier.DRY_RUN,
+        )
+    with pytest.raises(ValueError, match="requires ErrorEnvelope"):
+        RunSnapshot(
+            run_id="run-1",
+            plan_revision=1,
+            revision=0,
+            run_status=RunStatus.FAILED,
+            data_completeness=DataCompleteness.PARTIAL,
+            report_tier=ReportTier.DRY_RUN,
+        )
+    runnable = BranchSnapshot(
+        branch_id="branch-1",
+        step_id="step-1",
+        status=BranchStatus.RUNNING,
+    )
+    with pytest.raises(ValueError, match="runnable branch"):
+        RunSnapshot(
+            run_id="run-1",
+            plan_revision=1,
+            revision=0,
+            run_status=RunStatus.WAITING_DATA,
+            data_completeness=DataCompleteness.PARTIAL,
+            report_tier=ReportTier.DRY_RUN,
+            resume_status=RunStatus.RUNNING,
+            branches=[runnable],
+        )
+
+
+def test_branch_transition_rejects_unknown_missing_checkpoint_and_illegal_target() -> None:
+    run = make_snapshot(RunStatus.RUNNING).model_copy(
+        update={
+            "branches": [
+                BranchSnapshot(
+                    branch_id="branch-1",
+                    step_id="step-1",
+                    status=BranchStatus.PENDING,
+                )
+            ]
+        }
+    )
+    with pytest.raises(InvalidRunTransition, match="unknown"):
+        transition_branch(run, "missing", BranchStatus.RUNNING)
+    with pytest.raises(InvalidRunTransition, match="checkpoint"):
+        transition_branch(run, "branch-1", BranchStatus.WAITING_DATA)
+    with pytest.raises(InvalidRunTransition, match="illegal branch"):
+        transition_branch(run, "branch-1", BranchStatus.COMPLETED)

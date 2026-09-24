@@ -1,6 +1,8 @@
 """Durable local implementations of core storage ports."""
 
 from .files import (
+    ArtifactIntegrityError,
+    ConfigMigrationError,
     FileArtifactStore,
     FileConfigStore,
     FileRunStateStore,
@@ -9,6 +11,8 @@ from .files import (
 )
 
 __all__ = [
+    "ArtifactIntegrityError",
+    "ConfigMigrationError",
     "FileArtifactStore",
     "FileConfigStore",
     "FileRunStateStore",

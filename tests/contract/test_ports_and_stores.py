@@ -4,8 +4,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, Literal
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from harness.core.contracts.models import (
     ArtifactClassification,
@@ -21,6 +23,7 @@ from harness.core.contracts.ports import (
 from harness.core.contracts.state import ReportTier, RunSnapshot, RunStatus
 from harness.core.storage.files import (
     ArtifactIntegrityError,
+    ConfigMigrationError,
     FileArtifactStore,
     FileConfigStore,
     FileRunStateStore,
@@ -28,6 +31,27 @@ from harness.core.storage.files import (
     PathBoundaryError,
     RevisionConflict,
 )
+
+
+class ConfigV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_version: Literal[1]
+    value: str
+
+
+class ConfigV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_version: Literal[2]
+    value: str
+    normalized: bool
+
+
+class V1ToV2:
+    from_version = 1
+    to_version = 2
+
+    def apply(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {**payload, "schema_version": 2, "normalized": True}
 
 
 def artifact(payload: bytes, artifact_id: str = "artifact-1") -> ArtifactEnvelope:
@@ -104,6 +128,96 @@ def test_config_loading_uses_strict_contract_validation(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert FileConfigStore(tmp_path).load("valid.json", NoOp).module_id == "llm"
+
+
+def test_config_migration_writes_new_immutable_version(tmp_path: Path) -> None:
+    source = tmp_path / "profile-v1.json"
+    source.write_text('{"schema_version":1,"value":"raw"}', encoding="utf-8")
+    store = FileConfigStore(tmp_path)
+
+    migrated = store.migrate(
+        "profile-v1.json",
+        "profile-v2.json",
+        ConfigV2,
+        V1ToV2(),
+    )
+
+    assert migrated == ConfigV2(schema_version=2, value="raw", normalized=True)
+    assert json.loads(source.read_text(encoding="utf-8"))["schema_version"] == 1
+    assert (
+        json.loads((tmp_path / "profile-v2.json").read_text(encoding="utf-8"))["schema_version"]
+        == 2
+    )
+
+    with pytest.raises(ConfigMigrationError, match="already exists"):
+        store.migrate("profile-v1.json", "profile-v2.json", ConfigV2, V1ToV2())
+
+
+def test_config_migration_rejects_in_place_unknown_and_nonsequential_steps(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "profile-v1.json").write_text(
+        '{"schema_version":1,"value":"raw"}',
+        encoding="utf-8",
+    )
+    store = FileConfigStore(tmp_path)
+
+    with pytest.raises(ConfigMigrationError, match="in place"):
+        store.migrate("profile-v1.json", "profile-v1.json", ConfigV2, V1ToV2())
+
+    class UnknownToNext(V1ToV2):
+        from_version = 7
+        to_version = 8
+
+    with pytest.raises(ConfigMigrationError, match="unknown source"):
+        store.migrate("profile-v1.json", "unknown.json", ConfigV2, UnknownToNext())
+
+    class Downgrade(V1ToV2):
+        from_version = 1
+        to_version = 0
+
+    with pytest.raises(ConfigMigrationError, match="sequential"):
+        store.migrate("profile-v1.json", "down.json", ConfigV2, Downgrade())
+
+    class Skip(V1ToV2):
+        from_version = 1
+        to_version = 3
+
+    with pytest.raises(ConfigMigrationError, match="sequential"):
+        store.migrate("profile-v1.json", "skip.json", ConfigV2, Skip())
+
+
+def test_config_migration_rejects_invalid_transformed_payload(tmp_path: Path) -> None:
+    (tmp_path / "profile-v1.json").write_text(
+        '{"schema_version":1,"value":"raw"}',
+        encoding="utf-8",
+    )
+
+    class InvalidMigration(V1ToV2):
+        def apply(self, payload: dict[str, Any]) -> dict[str, Any]:
+            return {**payload, "normalized": True}
+
+    with pytest.raises(ConfigMigrationError, match="target schema_version"):
+        FileConfigStore(tmp_path).migrate(
+            "profile-v1.json",
+            "invalid.json",
+            ConfigV2,
+            InvalidMigration(),
+        )
+    assert not (tmp_path / "invalid.json").exists()
+
+    class NonObjectMigration(V1ToV2):
+        def apply(self, payload: dict[str, Any]) -> Any:
+            return ["not", "an", "object"]
+
+    with pytest.raises(ConfigMigrationError, match="object"):
+        FileConfigStore(tmp_path).migrate(
+            "profile-v1.json",
+            "non-object.json",
+            ConfigV2,
+            NonObjectMigration(),
+        )
+    assert not (tmp_path / "non-object.json").exists()
 
 
 def test_artifact_put_is_idempotent_without_duplicate_side_effects(tmp_path: Path) -> None:

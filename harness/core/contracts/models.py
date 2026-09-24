@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .redaction import redact, redact_text
+from .redaction import redact, redact_serializable, redact_text
 
 
 class StrictContract(BaseModel):
@@ -16,6 +16,11 @@ class StrictContract(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     schema_version: Literal[1] = 1
+
+    @model_validator(mode="before")
+    @classmethod
+    def redact_serializable_fields(cls, value: object) -> object:
+        return redact_serializable(value)
 
 
 class ArtifactClassification(StrEnum):
@@ -37,6 +42,11 @@ class TraceEventType(StrEnum):
 class DataCompleteness(StrEnum):
     PARTIAL = "partial"
     FINAL = "final"
+
+
+class SourceReadiness(StrEnum):
+    NOT_READY = "not_ready"
+    READY = "ready"
 
 
 class NoOp(StrictContract):
@@ -109,6 +119,21 @@ class PlanStep(StrictContract):
     metric_refs: list[str] | None = None
     rule_packs: list[str] | None = None
     on_unsupported: Literal["await_alignment", "skip_optional"] | None = None
+    capability_class: Literal["core", "optional"] | None = None
+    waiver_ref: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unsupported_policy(self) -> PlanStep:
+        if self.capability_class == "core" and (
+            self.waiver_ref is not None or self.on_unsupported == "skip_optional"
+        ):
+            raise ValueError("core capability cannot be waived")
+        if self.on_unsupported == "skip_optional":
+            if self.capability_class != "optional" or self.waiver_ref is None:
+                raise ValueError("skip_optional requires existing optional capability waiver")
+        elif self.waiver_ref is not None:
+            raise ValueError("waiver_ref is only valid for skip_optional")
+        return self
 
 
 class Plan(StrictContract):
@@ -152,6 +177,12 @@ class ApprovalRecord(StrictContract):
     scope: Literal["c1", "c2", "c3"]
 
 
+class QualityAssertion(StrictContract):
+    assertion_id: str
+    passed: bool
+    summary: str
+
+
 class SourceManifestEntry(StrictContract):
     source_id: str
     platform: str
@@ -170,6 +201,38 @@ class SourceManifestEntry(StrictContract):
     snapshot_hash: str
     completeness: DataCompleteness
     capabilities: list[str]
+    readiness: SourceReadiness = SourceReadiness.NOT_READY
+    quality_assertions: list[QualityAssertion] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_readiness(self) -> SourceManifestEntry:
+        if (
+            self.time_range_start is not None
+            and self.time_range_end is not None
+            and self.time_range_end < self.time_range_start
+        ):
+            raise ValueError("source time range is reversed")
+        if self.readiness is SourceReadiness.READY:
+            required = (
+                self.time_range_start,
+                self.time_range_end,
+                self.report_cutoff,
+                self.latency_window_seconds,
+                self.watermark,
+            )
+            if any(value is None for value in required):
+                raise ValueError("formal readiness requires complete timing evidence")
+            if not self.quality_assertions or not all(
+                assertion.passed for assertion in self.quality_assertions
+            ):
+                raise ValueError("formal readiness requires passing quality assertions")
+            assert self.report_cutoff is not None
+            assert self.latency_window_seconds is not None
+            assert self.watermark is not None
+            ready_at = self.report_cutoff + timedelta(seconds=self.latency_window_seconds)
+            if self.watermark < ready_at:
+                raise ValueError("formal readiness watermark precedes latency window")
+        return self
 
 
 class SourceManifest(StrictContract):

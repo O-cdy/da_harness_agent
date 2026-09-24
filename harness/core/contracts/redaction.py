@@ -38,9 +38,19 @@ def redact_text(value: str) -> str:
 
 def redact(value: Any) -> Any:
     """Recursively produce a safe, structure-preserving value."""
+    sanitized = redact_serializable(value)
+    if sanitized is value and not (
+        value is None or isinstance(value, (bool, int, float, str, bytes, Mapping, Sequence))
+    ):
+        return redact_text(repr(value))
+    return sanitized
+
+
+def redact_serializable(value: Any) -> Any:
+    """Redact JSON-like values while preserving typed model inputs."""
     if isinstance(value, Mapping):
         return {
-            str(key): REDACTED if _SENSITIVE_KEY.search(str(key)) else redact(item)
+            str(key): (REDACTED if _SENSITIVE_KEY.search(str(key)) else redact_serializable(item))
             for key, item in value.items()
         }
     if isinstance(value, str):
@@ -48,10 +58,10 @@ def redact(value: Any) -> Any:
     if isinstance(value, bytes):
         return REDACTED
     if isinstance(value, Sequence):
-        return [redact(item) for item in value]
+        return [redact_serializable(item) for item in value]
     if value is None or isinstance(value, (bool, int, float)):
         return value
-    return redact_text(repr(value))
+    return value
 
 
 def safe_repr(value: Any) -> str:

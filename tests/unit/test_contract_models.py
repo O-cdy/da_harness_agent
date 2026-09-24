@@ -11,8 +11,10 @@ from harness.core.contracts.models import (
     NoOp,
     Plan,
     PlanStep,
+    QualityAssertion,
     SourceManifest,
     SourceManifestEntry,
+    SourceReadiness,
     TraceEvent,
 )
 
@@ -98,6 +100,46 @@ def test_plan_rejects_duplicate_and_self_referencing_steps() -> None:
         )
 
 
+def test_skip_optional_requires_existing_waiver_and_core_cannot_be_waived() -> None:
+    common = {
+        "step_id": "optional",
+        "type": "noop",
+        "depends_on": [],
+        "platform_scope": ["example"],
+        "input_fingerprint": "sha256:optional",
+        "required_capabilities": ["identity"],
+    }
+    with pytest.raises(ValidationError, match="waiver"):
+        PlanStep(
+            **common,
+            capability_class="optional",
+            on_unsupported="skip_optional",
+        )
+    with pytest.raises(ValidationError):
+        PlanStep(
+            **common,
+            capability_class="optional",
+            on_unsupported="skip_optional",
+            waiver_ref="",
+        )
+
+    accepted = PlanStep(
+        **common,
+        capability_class="optional",
+        on_unsupported="skip_optional",
+        waiver_ref="approval:waiver-1",
+    )
+    assert accepted.waiver_ref == "approval:waiver-1"
+
+    with pytest.raises(ValidationError, match="core"):
+        PlanStep(
+            **common,
+            capability_class="core",
+            on_unsupported="skip_optional",
+            waiver_ref="approval:waiver-1",
+        )
+
+
 def test_sensitive_canaries_are_removed_from_safe_contract_fields() -> None:
     error = ErrorEnvelope(
         code="E_RUNTIME",
@@ -132,6 +174,109 @@ def test_sensitive_canaries_are_removed_from_safe_contract_fields() -> None:
     assert "alice@example.com" not in dumped
     assert "mysql://" not in dumped
     assert "[REDACTED]" in dumped
+
+
+def test_all_free_text_references_use_central_redaction() -> None:
+    error = ErrorEnvelope(
+        code="E_RUNTIME",
+        category="runtime",
+        severity="error",
+        retryable=False,
+        module_id="executor",
+        run_id="run-1",
+        plan_revision=1,
+        safe_message="safe",
+        cause_ref="mysql://alice:secret@db.internal/prod",
+    )
+    trace = TraceEvent(
+        event_id="event-1",
+        event_type="tool",
+        run_id="run-1",
+        plan_revision=1,
+        timestamp=datetime.now(UTC),
+        input_refs=[
+            "token=super-secret",
+            "alice@example.com",
+            "+1 555 123 4567",
+        ],
+        result_summary={"nested": ["mysql://alice:secret@host/db"]},
+        duration_ms=1,
+        classification=ArtifactClassification.INTERNAL,
+    )
+
+    dumped = f"{error.model_dump_json()} {trace.model_dump_json()}"
+    for canary in (
+        "mysql://",
+        "super-secret",
+        "alice@example.com",
+        "555 123 4567",
+    ):
+        assert canary not in dumped
+
+
+def test_formal_source_readiness_requires_complete_evidence() -> None:
+    common = {
+        "source_id": "source-1",
+        "platform": "example",
+        "account_id": "account-1",
+        "logical_connection": "primary",
+        "adapter_id": "adapter",
+        "adapter_contract_version": "1",
+        "schema_fingerprint": "sha256:schema",
+        "query_hash": "sha256:query",
+        "row_count": 1,
+        "snapshot_hash": "sha256:snapshot",
+        "completeness": "final",
+        "capabilities": ["orders"],
+    }
+    with pytest.raises(ValidationError, match="formal readiness"):
+        SourceManifestEntry(**common, readiness=SourceReadiness.READY)
+
+    ready = SourceManifestEntry(
+        **common,
+        readiness=SourceReadiness.READY,
+        time_range_start=datetime(2026, 8, 1, tzinfo=UTC),
+        time_range_end=datetime(2026, 8, 31, tzinfo=UTC),
+        report_cutoff=datetime(2026, 8, 31, tzinfo=UTC),
+        latency_window_seconds=3600,
+        watermark=datetime(2026, 9, 1, 1, tzinfo=UTC),
+        quality_assertions=[
+            QualityAssertion(assertion_id="row-count", passed=True, summary="rows valid")
+        ],
+    )
+    assert ready.readiness is SourceReadiness.READY
+
+    with pytest.raises(ValidationError, match="quality assertions"):
+        SourceManifestEntry(
+            **common,
+            readiness=SourceReadiness.READY,
+            time_range_start=datetime(2026, 8, 1, tzinfo=UTC),
+            time_range_end=datetime(2026, 8, 31, tzinfo=UTC),
+            report_cutoff=datetime(2026, 8, 31, tzinfo=UTC),
+            latency_window_seconds=3600,
+            watermark=datetime(2026, 9, 1, 1, tzinfo=UTC),
+            quality_assertions=[
+                QualityAssertion(
+                    assertion_id="row-count",
+                    passed=False,
+                    summary="rows invalid",
+                )
+            ],
+        )
+
+    with pytest.raises(ValidationError, match="latency window"):
+        SourceManifestEntry(
+            **common,
+            readiness=SourceReadiness.READY,
+            time_range_start=datetime(2026, 8, 1, tzinfo=UTC),
+            time_range_end=datetime(2026, 8, 31, tzinfo=UTC),
+            report_cutoff=datetime(2026, 8, 31, tzinfo=UTC),
+            latency_window_seconds=3600,
+            watermark=datetime(2026, 8, 31, 0, 30, tzinfo=UTC),
+            quality_assertions=[
+                QualityAssertion(assertion_id="row-count", passed=True, summary="valid")
+            ],
+        )
 
 
 def test_artifact_manifest_and_approval_contracts_are_strict() -> None:

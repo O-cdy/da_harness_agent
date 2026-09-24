@@ -20,10 +20,11 @@ from harness.core.contracts.models import (
     IdempotencyKey,
     StrictContract,
 )
-from harness.core.contracts.ports import ContractT
+from harness.core.contracts.ports import ConfigMigration, ContractT
 from harness.core.contracts.state import RunSnapshot
 
 __all__ = [
+    "ConfigMigrationError",
     "FileArtifactStore",
     "FileConfigStore",
     "FileRunStateStore",
@@ -39,6 +40,10 @@ class PathBoundaryError(ValueError):
 
 class RevisionConflict(RuntimeError):
     """A compare-and-swap observed a different committed revision."""
+
+
+class ConfigMigrationError(ValueError):
+    """A config migration violated immutable sequential versioning."""
 
 
 class ArtifactIntegrityError(RuntimeError):
@@ -139,6 +144,49 @@ class FileConfigStore:
     def load(self, relative_path: str, model: type[ContractT]) -> ContractT:
         path = _safe_path(self._root, relative_path)
         return model.model_validate_json(path.read_bytes())
+
+    def migrate(
+        self,
+        source_path: str,
+        destination_path: str,
+        target_model: type[ContractT],
+        migration: ConfigMigration,
+    ) -> ContractT:
+        source = _safe_path(self._root, source_path)
+        destination = _safe_path(self._root, destination_path)
+        if source == destination:
+            raise ConfigMigrationError("config migration cannot run in place")
+        if destination.exists():
+            raise ConfigMigrationError("migration destination already exists")
+        raw = json.loads(source.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ConfigMigrationError("config root must be an object")
+        source_version = raw.get("schema_version")
+        if (
+            isinstance(source_version, bool)
+            or not isinstance(source_version, int)
+            or source_version != migration.from_version
+        ):
+            raise ConfigMigrationError("unknown source schema_version")
+        if migration.to_version != migration.from_version + 1:
+            raise ConfigMigrationError("migration versions must be sequential and forward")
+        try:
+            transformed = migration.apply(dict(raw))
+        except Exception as error:
+            raise ConfigMigrationError("migration transform failed") from error
+        if not isinstance(transformed, dict):
+            raise ConfigMigrationError("migration output must be an object")
+        if transformed.get("schema_version") != migration.to_version:
+            raise ConfigMigrationError("migration emitted invalid target schema_version")
+        try:
+            validated = target_model.model_validate(transformed)
+        except ValueError as error:
+            raise ConfigMigrationError("migration output failed target validation") from error
+        with _exclusive_lock(destination.with_suffix(".lock")):
+            if destination.exists():
+                raise ConfigMigrationError("migration destination already exists")
+            _atomic_write(destination, validated.model_dump_json().encode())
+        return validated
 
 
 class FileArtifactStore:

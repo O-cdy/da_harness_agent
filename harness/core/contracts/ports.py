@@ -2,18 +2,39 @@
 
 from __future__ import annotations
 
-from typing import Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
-from .models import ArtifactEnvelope, IdempotencyKey, StrictContract
+from pydantic import BaseModel
+
+from .models import ArtifactEnvelope, IdempotencyKey
 from .state import RunSnapshot
 
-ContractT = TypeVar("ContractT", bound=StrictContract)
+ContractT = TypeVar("ContractT", bound=BaseModel)
+
+
+class ConfigMigration(Protocol):
+    from_version: int
+    to_version: int
+
+    def apply(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Transform one schema version without mutating its source."""
+        ...
 
 
 @runtime_checkable
 class ConfigPort(Protocol):
     def load(self, relative_path: str, model: type[ContractT]) -> ContractT:
         """Load and strictly validate an immutable configuration contract."""
+        ...
+
+    def migrate(
+        self,
+        source_path: str,
+        destination_path: str,
+        target_model: type[ContractT],
+        migration: ConfigMigration,
+    ) -> ContractT:
+        """Write exactly one forward version to a new immutable path."""
         ...
 
 

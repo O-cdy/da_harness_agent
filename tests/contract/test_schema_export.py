@@ -19,6 +19,8 @@ def test_generated_v1_bundle_matches_export_api() -> None:
         "Plan",
         "PlanStep",
         "ApprovalRecord",
+        "BranchSnapshot",
         "RunSnapshot",
+        "QualityAssertion",
         "SourceManifest",
     } <= generated["contracts"].keys()
