@@ -1,7 +1,7 @@
 # 20 · 数据源与接入配置（唯一定义处）
 
 > 唯一职责：定义数据源与接入配置。**本文件是数据源配置的唯一来源**，`harness/config/` 只读取本文件，不得在代码中硬编码默认值。
-> 版本 v0.5 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（§5.3/§5.4 为实测登记；平台白名单以 `data-audit.md` §8 为准）。Shopify 口径见 ADR-019～065；跨平台 canonical 与 TikTok 首阶段接入见 ADR-068/069。
+> 版本 v0.6 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（§5.3/§5.4 为实测登记；平台白名单以 `data-audit.md` §8 为准）。Shopify 口径见 ADR-019～065；跨平台 canonical 与 TikTok 首阶段接入见 ADR-068/069；未配置延迟窗口语义由 ADR-070 校正。
 
 ## 1. 默认接入模式（单源开关）
 
@@ -120,7 +120,7 @@ default_datasource_mode: mysql   # 可选值：mysql | file
     "time_range": {"min": "ISO8601", "max": "ISO8601"},
     "watermark": "ISO8601",
     "cutoff": "ISO8601",
-    "grace_window_hours": 0,
+    "grace_window_hours": null,
     "readiness": "pending | ready | failed",
     "completeness": "partial | final",
     "capabilities": [],

@@ -1411,3 +1411,27 @@ USD 单币种：46,257,435 / 2,182,040 → 4.72%
 **修订关系**：扩展 ADR-013/057/066/067/068；将 ADR-055/059/065 中的 Shopify 物理时间字段收窄到 `platform:shopify`，跨平台规则统一使用 canonical 时间；不改变 ADR-010 的下单时点业务口径。
 
 **影响**：`10-architecture.md`、`metrics.md`、`data-sources.md`、playbooks、`rules.md`、`eval-rubric.md`、`profile.yaml`、`PROJECT_STATUS.md`。本条不写 `harness/` 业务代码。
+
+---
+
+## ADR-070 · 2026-09-24 · S0 实现就绪契约校正
+
+**背景**：ADR-069 后的独立实现就绪复核发现，人读说明与机器 manifest 仍有字段名、审批顺序、状态、评估 overlay、错误归档条件和指纹字段漂移。另有 M104 文案误写为退货发生月冲减，与 ADR-010“退款单件数保留在原下单月”冲突。本条只校正既有决策的实现表达，不新增业务口径。
+
+**决策**：
+1. Playbook 能力分类字段统一为 `core_capabilities` / `optional_capabilities`；平台 Profile/Adapter 只声明扁平 supported/unsupported capability，核心/可选分类由当前 Playbook manifest 决定。
+2. 执行顺序统一为：目标选择与无数据 preflight → 物化计划 → C1 → 生成/归档原料 SQL → C2 → 快照与 adapter → 计算 → 校验 → 渲染 → 封包 → 评估 → C3/发布。C1 前禁止读取业务数据，C2 前禁止执行原料 SQL。
+3. `run_status` 增加规划与 SQL 准备状态；`awaiting_alignment` / `waiting_data` 是分支暂停态，只有无可运行分支时才提升为 Run 暂停态。幂等键统一包含 `plan_revision`。
+4. Plan step 的公共必填字段为 `step_id/type/depends_on/platform_scope/input_fingerprint`；capability、metric、rule-pack 与 unsupported 策略仅在适用 step 必填，不用空值伪装。
+5. Eval overlay 使用 manifest 中的机器 id，并在量表中逐一登记；M106 按账户 ASP 与商品/型号 ASP 分能力门禁。
+6. 所有阻断运行失败必须产生 `ErrorEnvelope`；只有可复发的新错误家族、架构/口径缺陷或需要防回归门禁时才新增 E-NNNN。
+7. M104 按 ADR-010 恢复为下单月商业售出件数，退款件数不冲减 M104，只用于 M207b；缺 `return_quantity` 不影响核心 M104。
+8. C1/C2 指纹字段按 ADR-069 完整化；C1 的 caliber 使用可在 preflight 解析的 SQL 模板注册契约 hash，C2 另审实际 `rendered_sql_hash`；Profile、manifest 与架构使用同一字段集合，并显式包含 adapter schema fingerprint。
+9. 跨模块接口归 `contracts`，canonical schema 是允许被 adapter/metric/validator 依赖的稳定数据契约；新增 `RunStateStorePort` 与 `ConfigPort` 明确运行状态/checkpoint和不可变配置归属。
+10. S0 的 echo fixture、机器 schema、no-op 矩阵和依赖边界测试属于 S0 首刀交付，不在开工前伪造“已完成”文件。
+
+**被否决**：边写 S0 边猜字段；C1 前先查业务数据；所有失败都创建 E-NNNN；把 profile capability 再复制一份核心/可选分类；缺 TikTok 退货数量就禁用 M104；为通过严格加载器给所有 step 填无意义空字段。
+
+**修订关系**：只澄清 ADR-010/066～069 的实现契约；不改变业务口径与平台范围。
+
+**影响**：`10-architecture.md`、`metrics.md`、playbooks、skills、`rules.md`、`eval-rubric.md`、`data-sources.md`、`profile.yaml`、`PROJECT_STATUS.md`。本条不写 `harness/` 业务代码。

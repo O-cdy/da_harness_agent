@@ -1,7 +1,7 @@
 # Skills 契约（SK-01 ~ SK-08）
 
 > 唯一职责：定义「可复用能力单元」的输入 / 输出 / 依赖口径 / 参数来源。
-> 版本 v0.2 | 最后更新 2026-09-24 | 状态：**已规划，未实现**（SK-07 记忆装配为首期薄封装；SK-08 为平台原生扩展；Session/向量不实现）
+> 版本 v0.3 | 最后更新 2026-09-24 | 状态：**已规划，未实现**（SK-07 记忆装配为首期薄封装；SK-08 为平台原生扩展；Session/向量不实现；错误语义由 ADR-070 校正）
 > 与 playbook 的关系见 `docs/10-architecture.md` §1.1：playbook 编排 skills；**Skill 禁止依赖某一 playbook id**（ADR-067 / R-82）。
 
 ## 通用约定（所有 Skill 适用）
@@ -12,7 +12,7 @@
 | 口径来源 | 正式指标必须引用 MetricRegistry；provisional 必须有运行内定义与证据。禁止 Skill 直读平台物理表 |
 | 数字产出 | 只能由 SQL / Python 计算；LLM 产出的数字一律无效（`10-architecture.md` §3） |
 | 留档 | 每个 skill 执行完写 `runs/<task>/artifacts/<skill_id>.json` + 代码留档 |
-| 失败处理 | 阻断级失败 → 中止并落 `errors/E-NNNN`，禁止静默跳过（R-xx 与 Validator 约定） |
+| 失败处理 | 阻断级失败 → 中止并生成脱敏 `ErrorEnvelope`，禁止静默跳过；只有可复发的新错误家族、口径/架构缺陷或需要防回归门禁时才新增 `errors/E-NNNN` |
 
 ## SK-01 量价拆解
 
@@ -22,7 +22,7 @@
 | 输出 | 量贡献、价贡献、残差（三项之和 = 差额） |
 | 依赖口径 | M401（ADR-063：量 = 店铺 SKU 件数，禁止 NS 件数）；货币已按 ADR-011 折 CNY |
 | 断言 | \|量贡献 + 价贡献 + 残差 − 实际差额\| < 1e-6 |
-| 参数 | `profile.yaml: ratios`（精度 / 是否展示残差） |
+| 参数 | `profile.yaml: volume_price` |
 
 ## SK-02 维度归因贡献度
 
@@ -51,7 +51,7 @@
 | 输入 | `plan.metric_refs` 对应的中间结果 + canonical 工件 + 当前 eval overlay |
 | 输出 | 断言报告（对账 / 量纲 / 空值率 / 同比环比合理性） |
 | 依赖口径 | 仅 `plan.metric_refs` + manifest eval overlay；G-23/G-24 |
-| 断言 | 任一阻断级失败 → 不得发布正式报告；禁止把月报 M401/M402 或 M101–M507 全集强制到其他场景 |
+| 断言 | 任一阻断级失败 → 不得发布正式报告且必须有 ErrorEnvelope；只有符合通用失败处理条件时归档 E-NNNN；禁止把月报 M401/M402 或 M101–M507 全集强制到其他场景 |
 | 参数 | `profile.yaml: currency`（量纲阈值） |
 
 ## SK-05 报告框架
@@ -75,6 +75,8 @@
 | 参数 | `profile.yaml: report` |
 
 ## SK-07 记忆装配
+
+SK-07 是 Orchestrator 的跨场景 pre-plan hook，不属于某个 Playbook 的 `skill_refs/steps`，避免每份 manifest 重复声明。
 
 | 项 | 内容 |
 |---|---|

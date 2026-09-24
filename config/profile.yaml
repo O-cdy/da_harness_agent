@@ -17,12 +17,12 @@
 profile_id: default
 organization_id: default-org
 schema_version: 2
-profile_version: "0.2.0"
+profile_version: "0.3.0"
 profile_name: 跨境电商 · 便携储能（当前业务背景）
 created_at: 2026-09-22
-updated_at: 2026-09-24          # ADR-069：动态平台、能力门禁与组件认证
+updated_at: 2026-09-24          # ADR-070：S0 实现就绪契约校正
 status: draft    # draft 只允许 dry_run；完整校准 + 明确审批后生成新的 active 版本（ADR-069）
-previous_profile_version: null
+previous_profile_version: "0.2.0"
 
 # ---------- 1. 币种与汇率 ----------
 currency:
@@ -145,6 +145,7 @@ datasource:
   facts_schema: bluetti_new      # ADR-056：事实表所在 schema；禁止写进核心代码
   dims_schema: shared_data       # ADR-056：维表 / 汇率 / 映射所在 schema
   capability_contract: docs/20-domain/playbooks/monthly-business-review/manifest.yaml
+  capability_classification_owner: playbook_manifest
   source: docs/20-domain/data-sources.md#1.2-1.4
 
 # ---------- 3. 商品维度体系（公司特定！） ----------
@@ -458,12 +459,14 @@ report_policy:
   source: docs/30-constraints/rules.md#R-99
 
 approvals:
+  caliber:
+    fingerprint_fields: [metric_contract_hash, rule_pack_hash, playbook_manifest_hash, profile_version, adapter_contract_hash, adapter_schema_fingerprint, source_contract_hash, sql_template_contract_hash, result_affecting_env_hash]
   c1:
     reuse_scope: playbook_and_target_platform_set
-    fingerprint_fields: [profile_version, playbook_manifest_hash, target_platforms, core_metric_contract_hash, rule_pack_hash]
+    fingerprint_fields: [organization_id, profile_version, caliber_fingerprint, target_platforms, plan_dag_hash, capability_preflight_hash, source_contract_hash, outline_hash, acceptance_criteria_hash]
   c2:
     reuse_scope: certified_platform_component
-    fingerprint_fields: [platform, adapter_contract_version, adapter_schema_fingerprint, platform_rule_pack_hash]
+    fingerprint_fields: [organization_id, profile_version, platform, step_id, adapter_contract_version, adapter_schema_fingerprint, source_contract_hash, sql_template_contract_hash, rendered_sql_hash, effective_rule_pack_hash, result_affecting_env_hash]
   c3:
     reuse: never
     subject: sealed_candidate_package

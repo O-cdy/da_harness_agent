@@ -2,7 +2,7 @@
 
 > 唯一职责：定义 harness 硬约束。本文件是约束的唯一来源，规则编号 R-xx，可被规则引擎直接引用。
 > 违反「阻断级」规则必须中止流程，不得出报告。
-> 版本 v0.7 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（R-01 ~ R-42 + **R-49～R-102**）。ADR-029 的 R-43~R-48 **编号占用且不复用，不生效**（ADR-030）。ADR-068 起规则按 scope 组合加载；ADR-069 冻结动态平台与发布契约。
+> 版本 v0.8 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**（R-01 ~ R-42 + **R-49～R-102**）。ADR-029 的 R-43~R-48 **编号占用且不复用，不生效**（ADR-030）。ADR-068 起规则按 scope 组合加载；ADR-069 冻结动态平台与发布契约；ADR-070 校正 S0 实现表达。
 
 ## 规则包与作用域
 
@@ -30,7 +30,7 @@
 | R-06 | **归因维度互斥可加**（ADR-064）。M402 每次只用一层；层内切片 ΔM102 之和必须等于整体。否则不得出贡献度 | 阻断 |
 | R-07 | **env 门控。** 无凭据即 no-op 并显式报错，禁止静默降级 | 阻断 |
 | R-08 | **可复现三要素。** 快照 hash + 代码留档 + 参数与模型版本，缺一不出报告 | 阻断 |
-| R-09 | **原料 SQL 全量留档**。未经 C2 放行不得执行。同 playbook 同口径版本首次人工放行后，重跑视为已放行（ADR-057），仍须留档 | 阻断 |
+| R-09 | **原料 SQL 全量留档**。未经 C2 放行不得执行；仅 C2 完整组件指纹完全一致时可复用既有审批，仍须留档（ADR-057/069/070） | 阻断 |
 | R-10 | **行数与耗时上限**，超限中止并记录；接近阈值可先告警 | 阻断 |
 | R-11 | **token 预算**，分层路由：格式化与分片汇总走轻量模型 | 告警 |
 | R-12 | **大促窗口识别**（ADR-054 收窄）：**有日历且已启用时**，判定异动异常前必须先识别促销窗口，禁止把大促虹吸写成经营恶化。无日历不适用本条，改走 R-70 | 阻断 |
@@ -89,7 +89,7 @@
 | R-70 | **无大促日历不阻断规模 / 效率 / 达成**（ADR-054）。禁止因日历缺失整份月报失败。异动章必须标 `calendar_missing=true`（G-21 P0）。禁止把未识别窗口的下跌写成经营恶化。禁止把 `in_promo_window` 默认成 false | 阻断 |
 | R-71 | **报告期 = UTC 自然月 × canonical `order_created_date`**（ADR-055/068/069）。Shopify adapter 映射 `sale_date`，TikTok 映射 `created_time`；禁止跨平台规则引用物理时间列、按站点本地时区重切或使用 4-5-4 | 阻断 |
 | R-72 | **双库同一连接**（ADR-056）。schema 名从 profile 读；SQL 必须 `schema.table`。禁止核心代码写死库名。禁止为同一实例拆 `MYSQL_DATABASE_FACTS` / `MYSQL_DATABASE_DIMS`。缺凭据或缺 schema → 显式 no-op | 阻断 |
-| R-73 | **审批按完整口径指纹与组件复用**（ADR-057/068/069）。`caliber_fingerprint` 必须含 metric/rule 内容、manifest、不可变 Profile、adapter/schema/source contract、SQL 模板及结果相关 env hash。平台组合变化重审整体 C1；未变化分支可按 step C2 指纹复用；C3 每个候选包 hash 每次审核 | 阻断 |
+| R-73 | **审批按完整口径指纹与组件复用**（ADR-057/068～070）。`caliber_fingerprint` 必须含 metric/rule 内容、manifest、不可变 Profile、adapter contract、adapter schema fingerprint、source contract、C1 前可解析的 SQL 模板注册契约及结果相关 env hash；C2 另含实际 `rendered_sql_hash`。平台组合变化重审整体 C1；未变化分支可按 step C2 指纹复用；C3 每个候选包 hash 每次审核 | 阻断 |
 | R-74 | **新经营账户不参与同比**（ADR-059/069）。按 canonical `platform + account_id` 的 `MIN(order_created_date)` 判断完整月数；小于 12 不出 M302，可出 M303并标新账户。合计同比只含够龄账户；禁止分母填 0或写死清单 | 阻断 |
 | R-75 | **站点 ≠ 市场**（ADR-060 / G-22）。禁止把 `site=EU` 当欧盟合计。市场成员只从 profile `markets.groups` 读。禁止市场行与成员站点混加。禁止一个站点属两个市场。禁止用 `market_goal` 空站点市场行当目标 | 阻断 |
 | R-76 | **口径必须可追溯**（ADR-062 / G-23）。已确认条目须能追到 ADR；profile 参数须有 `source`；报告数字须能追到指标编码 + SQL/代码 + 快照 hash。禁止无 ADR 标已确认；禁止「已定」进报告 | 阻断 |
@@ -102,7 +102,7 @@
 | R-83 | **平台原始数据必须先经 `PlatformAdapter` 映射 canonical**（ADR-068）。Playbook/Skill/Metric/Reporter 禁止直接读取平台表名；platform-native extension 也必须经已注册 adapter 暴露 | 阻断 |
 | R-84 | **指标状态隔离**（ADR-068）。`canonical`、`platform-native`、`provisional`、`diagnostic` 禁止混用。platform-native 不得跨平台相加；provisional 必须留定义/SQL/代码/快照并禁止进正式报告；升格须用户确认 + ADR | 阻断 |
 | R-85 | **规则按 scope 组合**（ADR-068）。`plan.rule_packs` 必须声明 core/domain/platform/playbook；未声明 scope 的平台规则不得加载；同级冲突阻断，覆盖必须追到 ADR | 阻断 |
-| R-86 | **Playbook 只从机器可读 manifest 执行**（ADR-068）。Registry 禁止解析 Markdown 推导步骤；manifest 必须声明 contract version、steps、metric/skill refs、rule packs、capabilities、time scope、outline、approval 与 eval overlay | 阻断 |
+| R-86 | **Playbook 只从机器可读 manifest 执行**（ADR-068/070）。Registry 禁止解析 Markdown 推导步骤；manifest 必须声明 schema/contract version、steps、metric/skill refs、rule packs、`core_capabilities`、`optional_capabilities`、time scope、unsupported/report policy、outline、approval 与 eval overlay | 阻断 |
 | R-87 | **capability 门禁**（ADR-068）。Adapter 必须声明数据能力、覆盖期、水位与质量；缺能力输出 unsupported/coverage，不得估算或假装空值为 0 | 阻断 |
 | R-88 | **未对齐映射进入 `awaiting_alignment`**（ADR-068）。每次只问一个口径问题；受影响分支暂停、独立分支可继续留证据；全部阻断项关闭前不得发布正式报告，禁止静默跳过 | 阻断 |
 | R-89 | **客户身份默认按 `platform + account_id` 隔离**（ADR-068/069）。跨账户合并必须有当前组织/profile 已确认的 identity map；禁止用 email/手机号自动合并；业务审批不得跨组织复用 | 阻断 |
@@ -110,7 +110,7 @@
 | R-91 | **TikTok 退款按事件月冲减**（ADR-068）。M102 商品净额只冲 `tiktok_returns.refund_subtotal`，时间取 `event_date`；商品归因用 `tiktok_return_items`。运费/税不得并入商品净销售额；取消表退款不得重复冲减 | 阻断 |
 | R-92 | **PII 默认拒绝**（ADR-068）。姓名、电话、地址、买家账号及含 PII 的 raw JSON 禁止进入 canonical、trace、证据包和报告；客户分析仅用平台命名空间内不可逆哈希。原始 PII 访问须独立授权并留痕 | 阻断 |
 | R-93 | **逐源快照与多平台完整度**（ADR-068）。每个平台/表/文件必须独立 hash、schema、行数、时间范围、水位和 completeness；缺必需平台只可生成带覆盖率的 `partial`，齐备后生成新 `final`；禁止上期数据补齐或覆盖旧版 | 阻断 |
-| R-94 | **运行状态与幂等**（ADR-068）。状态迁移必须符合架构 §16；取消/恢复从 checkpoint 执行；同 `run_id + step_id + input_fingerprint` 重试不得产生重复副作用；失败必须返回脱敏 `ErrorEnvelope` | 阻断 |
+| R-94 | **运行状态与幂等**（ADR-068/070）。状态迁移必须符合架构 §16；取消/恢复从 checkpoint 执行；同 `run_id + plan_revision + step_id + input_fingerprint` 重试不得产生重复副作用；所有阻断失败必须返回脱敏 `ErrorEnvelope` | 阻断 |
 | R-95 | **评估按通用基线 + playbook overlay 执行**（ADR-068）。禁止把 M401/M402 或 M101–M507 全集强制到所有场景；只评 `plan.metric_refs` 与 manifest 声明的 overlay | 阻断 |
 | R-96 | **跨源关联键必须先规范化并记录策略**（ADR-068 / E-0009）。字符集、collation、大小写、首尾空白与 Unicode normalization 必须显式；禁止依赖数据库隐式转换。规范化后仍未命中才可进入未映射桶 | 阻断 |
 | R-97 | **Playbook 平台集合运行时显式选择**（ADR-069）。交互 Run 必须提交非空 `target_platforms`；定时任务必须在调度配置声明。Playbook 禁止写死平台数量或组合；Profile `enabled` 不等于本次 required | 阻断 |

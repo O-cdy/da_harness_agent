@@ -1,11 +1,11 @@
 # 唯一职责：定义经营分析月报的机器可执行 Playbook 契约。
-# 版本：v1.0
+# 版本：v1.1
 # 最后更新：2026-09-24
 # 状态：生效（实现未开工）
 
 schema_version: 1
 id: monthly-business-review
-contract_version: "1.0"
+contract_version: "1.1"
 description_source: docs/20-domain/playbooks/monthly-business-review.md
 
 platform_selection:
@@ -88,7 +88,9 @@ metric_refs:
 
 metric_availability:
   M106:
-    requires: [product_identity]
+    dimensions:
+      account: {requires: [orders, commercial_amounts]}
+      product: {requires: [product_identity]}
   M207b:
     requires: [return_quantity]
   M210:
@@ -132,47 +134,69 @@ steps:
     type: validate_input
     depends_on: []
     platform_scope: run
-    on_unsupported: await_alignment
-  - step_id: snapshot_and_adapt
-    type: platform_fan_out
+    input_fingerprint: target_platforms+profile_version+manifest_hash
+  - step_id: preflight_capabilities
+    type: metadata_preflight
     depends_on: [select_targets]
     platform_scope: target_platforms
     required_capabilities: "$core_capabilities"
     on_unsupported: await_alignment
+    input_fingerprint: target_platforms+profile_version+adapter_registry_hash+source_contract_hash
   - step_id: materialize_plan
     type: deterministic_plan
-    depends_on: [snapshot_and_adapt]
+    depends_on: [preflight_capabilities]
     platform_scope: run
+    rule_packs: "$effective_rule_packs"
+    metric_refs: "$metric_refs"
+    input_fingerprint: preflight_hash+manifest_hash+caliber_fingerprint+outline_hash+acceptance_criteria_hash
     approval: C1
   - step_id: archive_source_sql
     type: platform_fan_out
     depends_on: [materialize_plan]
     platform_scope: target_platforms
+    rule_packs: "$effective_rule_packs"
+    input_fingerprint: plan_hash+adapter_contract_hash+adapter_schema_fingerprint+source_contract_hash+sql_template_contract_hash+result_affecting_env_hash
     approval: C2
-  - step_id: compute_metrics
-    type: metric_dag
+  - step_id: snapshot_and_adapt
+    type: platform_fan_out
     depends_on: [archive_source_sql]
     platform_scope: target_platforms
+    required_capabilities: "$core_capabilities"
+    on_unsupported: await_alignment
+    input_fingerprint: rendered_sql_hash+source_contract_hash+adapter_schema_fingerprint+report_period
+  - step_id: compute_metrics
+    type: metric_dag
+    depends_on: [snapshot_and_adapt]
+    platform_scope: target_platforms
+    metric_refs: "$metric_refs"
+    input_fingerprint: canonical_snapshot_hash+metric_contract_hash
   - step_id: validate
     type: validation
     depends_on: [compute_metrics]
     platform_scope: run
+    metric_refs: "$metric_refs"
+    rule_packs: "$effective_rule_packs"
+    input_fingerprint: metric_artifact_hash+assertion_contract_hash
   - step_id: render_candidate
     type: report
     depends_on: [validate]
     platform_scope: run
+    input_fingerprint: validated_artifact_hash+outline_hash
   - step_id: seal_candidate
     type: artifact_seal
     depends_on: [render_candidate]
     platform_scope: run
+    input_fingerprint: candidate_members_hash
   - step_id: evaluate
     type: evaluation
     depends_on: [seal_candidate]
     platform_scope: run
+    input_fingerprint: candidate_package_hash+eval_overlay_hash
   - step_id: approve_and_publish
     type: approval
     depends_on: [evaluate]
     platform_scope: run
+    input_fingerprint: candidate_package_hash+evaluation_hash
     approval: C3
 
 unsupported_policy:
@@ -191,9 +215,16 @@ report_policy:
   final_requires_all_target_core_sources: true
 
 approval_policy:
-  C1: run_plan_fingerprint
-  C2: component_step_fingerprint
-  C3: sealed_candidate_hash_every_run
+  C1:
+    subject: materialized_plan
+    fingerprint_source: profile.approvals.c1.fingerprint_fields
+  C2:
+    subject: platform_step_source_sql
+    fingerprint_source: profile.approvals.c2.fingerprint_fields
+  C3:
+    subject: sealed_candidate_package
+    fingerprint_source: profile.approvals.c3.fingerprint_fields
+    reuse: never
   platform_set_change_invalidates_C1: true
   unchanged_component_C2_reusable: true
 

@@ -2,7 +2,7 @@
 
 > 本文件是本项目**唯一**的进度与上下文同步文档。约束见 `AGENTS.md` 守则 1。
 > 任何 agent 在「开始 / 切换 / 完成」任务时点必须更新本文件；新 agent / 新会话 / 发现本节有未读更新时，必须先读 `AGENTS.md` 守则 0 再工作，只续写、不覆盖。
-> 最后更新：2026-09-24 18:36 | 更新者：Atlas
+> 最后更新：2026-09-24 19:02 | 更新者：Atlas
 
 ---
 
@@ -26,11 +26,11 @@
 > 架构与模块职责的完整定义见 `docs/10-architecture.md`（唯一来源）。本节只列硬约定摘要，不复制模块表（守则 2 / 守则 8）。
 
 三条硬约定：
-1. **三级人工卡点** —— C1 计划、C2 原料 SQL、C3 最终报告；同 playbook 同口径版本首次放行后 C1/C2 可自动（ADR-057）；派生计算自动放行但全量留档。
+1. **三级人工卡点** —— C1 计划、C2 原料 SQL、C3 封存候选包；C1/C2 仅完整指纹一致时复用，C3 每个候选包每次审核（ADR-057/069/070）；派生计算自动放行但全量留档。
 2. **可复现三要素** —— 数据快照 hash + 代码留档 + 参数与模型版本，缺一不出报告。
 3. **单源事实** —— 事实只在 `docs/`；本文件只写状态与链接，不复制正文。
 
-硬规则 R-01~R-42 + **R-49～R-102** 见 `docs/30-constraints/rules.md`；指标采用 canonical/platform-native/provisional/diagnostic 四态，口径见 `docs/20-domain/metrics.md`；动态平台、能力门禁、三维运行状态、不可变候选包与组件认证见 `docs/10-architecture.md`（ADR-066～069）。记忆层为口径/错误/证据包三类文件源。剧本登记及机器 manifest 见 `docs/20-domain/playbooks/index.md`；能力契约 SK-01~08 见 `docs/20-domain/skills/index.md`；字段实测见 `docs/20-domain/data-audit.md`。核心宪法见 `AGENTS.md` 守则 0。ADR-029 不生效；ADR-030 原清单已收口。
+硬规则 R-01~R-42 + **R-49～R-102** 见 `docs/30-constraints/rules.md`；指标采用 canonical/platform-native/provisional/diagnostic 四态，口径见 `docs/20-domain/metrics.md`；动态平台、能力门禁、三维运行状态、不可变候选包、组件认证与 S0 实现表达见 `docs/10-architecture.md`（ADR-066～070）。记忆层为口径/错误/证据包三类文件源。剧本登记及机器 manifest 见 `docs/20-domain/playbooks/index.md`；能力契约 SK-01~08 见 `docs/20-domain/skills/index.md`；字段实测见 `docs/20-domain/data-audit.md`。核心宪法见 `AGENTS.md` 守则 0。ADR-029 不生效；ADR-030 原清单已收口。
 
 ## 3. 已完成的关键进展（含日期）
 
@@ -121,6 +121,7 @@
 | 2026-09-24 15:52 | Atlas | **ADR-067**：核心与场景解耦；`run`/`ask` 并列。未写代码 | ADR-067、架构 §13、R-82、playbooks/index.md |
 | 2026-09-24 16:54 | Atlas | **ADR-068**：跨平台 canonical 内核 + TikTok 首阶段真实接入；规则/指标/评估解耦，生产运行契约补齐；未写 harness 代码 | ADR-068、架构 §14～17、R-83～R-96、TikTok 七表实测 |
 | 2026-09-24 17:58 | Atlas | **ADR-069**：动态目标平台、核心/可选能力、三层报告等级、readiness、候选包/C3 指纹与 Profile/Adapter 组件认证契约收口；未写 harness 代码 | ADR-069、架构 v0.5、R-97～R-102、月报 manifest、rule-packs.yaml |
+| 2026-09-24 19:02 | Atlas | **ADR-070**：S0 实现就绪校正完成；消除 manifest、DAG/审批顺序、状态暂停态、M104/M106、Eval overlay、ErrorEnvelope/E-NNNN、审批指纹与依赖方向歧义 | ADR-070、架构 v0.6、月报 manifest v1.1、Profile v0.3.0、独立三轮复核 |
 
 ## 4. 进行中的任务及负责人
 
@@ -137,6 +138,7 @@
 | 跨平台架构修订与 TikTok 首阶段接入规划 | Atlas | **已完成** 2026-09-24 16:54 | ADR-068；架构/指标/规则/数据源/剧本/技能/评估/profile 已同步；未写 harness 代码 |
 | Harness 架构契约收口（动态平台 / 能力门禁 / 运行与审批契约） | Atlas | **已完成** 2026-09-24 18:02 | ADR-069 + 架构/规则/指标/数据源/Playbook/Eval/Profile 与机器 manifest 同步；YAML/引用/表格/补丁一致性验证通过；不写 harness 业务代码 |
 | GitHub 远端接入与 Cloud 开发准备 | Atlas | **已完成** 2026-09-24 18:36 | `master` 已推送并跟踪 `origin/master`；Cloud Agent 可从该远端分支启动 |
+| S0 开工前实现就绪复核（文档契约一致性 / 设计稳健性） | Atlas | **已完成** 2026-09-24 19:02 | ADR-070；跨 SSOT/机器契约独立三轮复核无剩余 S0 开工阻断；S0 应创建的代码/schema/echo fixture 未提前实现 |
 
 ## 5. 待办与优先级排序
 
@@ -156,7 +158,7 @@
 
 | 优先级 | 待办 | 负责人 | 依赖 |
 |---|---|---|---|
-| **P1** | **S0 骨架**：typed Port/registry + Playbook/Rule Pack 机器 manifest + Run/Error/Artifact 三维契约 + CLI `run`/`ask`/`playbooks` + 非月报 fixture + no-op（ADR-066～069） | Atlas | 规划已落 `docs/10-architecture.md`；**用户确认后才写 `harness/` 代码** |
+| **P1** | **S0 骨架**：typed Port/registry + Playbook/Rule Pack 机器 manifest + Run/Error/Artifact 三维契约 + CLI `run`/`ask`/`playbooks` + 非月报 fixture + no-op（ADR-066～070） | Atlas | 规划已落 `docs/10-architecture.md`；实现就绪复核完成后才写 `harness/` 代码 |
 | **P1** | S1–S7 按架构 §11：认证 PlatformAdapter → canonical → MetricRegistry → 场景技能 → 封包后校验评估 → 动态平台报告 → LLM `ask` | Atlas | S0 |
 | **P1** | 能力层落地：`core/llm/`、`core/skills/` SK-01~08；MCP/Web/Schedule 仅保留 Port + no-op，不铺空目录 | Atlas | S0 |
 | **P1** | 接真实库（只读）分别认证 Shopify/TikTok adapter，并按每次显式 `target_platforms` 跑通端到端月报；TikTok Affiliate/LIVE 原生模块不进 canonical 合计 | Atlas | S1 起 |
@@ -282,6 +284,7 @@
 | ADR-067 | 2026-09-24 | **核心与场景解耦**：`run` 与 `ask` 并列；编排器禁止写死月报；月报只是第一份验收剧本 | 同上 |
 | ADR-068 | 2026-09-24 | **跨平台 canonical 内核 + TikTok 首阶段真实接入**：规则/指标/评估分层；逐源证据、运行状态、PII 与完整度契约 | 同上 |
 | ADR-069 | 2026-09-24 | **动态平台与生产门禁契约收口**：显式目标平台、核心/可选能力、报告等级、readiness、封包/C3 指纹、Profile/Adapter 组件认证 | 同上 |
+| ADR-070 | 2026-09-24 | **S0 实现就绪契约校正**：统一 manifest 字段、C1/C2/快照顺序、状态暂停态、M104/M106 能力门禁、ErrorEnvelope/E-NNNN、审批指纹与依赖边界 | 同上 |
 
 ## 8. 附：文档更新日志
 
@@ -357,3 +360,5 @@
 | 2026-09-24 18:02 | Atlas | **一致性验证通过**：三份 YAML 可解析；机器规则/指标/Skill 引用完整；启用平台覆盖全部月报核心 capability；DAG 为 seal→evaluate→C3；Markdown 表格与 `git diff --check` 通过；过期 canonical/platform 耦合扫描仅剩 ADR 被否决方案 |
 | 2026-09-24 18:36 | Atlas | 开始接入 GitHub 远端，为 Cursor Cloud Agent 提供可克隆基线；目标仓库已确认可访问且当前为空 |
 | 2026-09-24 18:36 | Atlas | GitHub 远端接入完成：新增 `origin`，首次推送 `master` 并建立 upstream；项目已具备 Cursor Cloud Agent 的 Git 基线 |
+| 2026-09-24 18:50 | Atlas | 开始 S0 开工前实现就绪复核：先修正 Playbook capability 字段名与 E-NNNN 归档条件，再执行跨 SSOT/机器契约一致性审查与回归验证 |
+| 2026-09-24 19:02 | Atlas | **S0 实现就绪复核完成**：追加 ADR-070；统一机器字段、DAG/C1/C2/快照顺序、状态暂停态、M104/M106 门禁、Eval overlay、ErrorEnvelope/E-NNNN、审批指纹、依赖与 no-op；独立终审仅剩字段别名后已修正为 `rendered_sql_hash` |

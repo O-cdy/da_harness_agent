@@ -1,7 +1,7 @@
 # Playbook · 经营分析月报
 
 > 唯一职责：定义经营分析月报的**执行步骤**。这是 harness 的**第一份场景剧本**（ADR-002 / ADR-032 / ADR-067），**不是产品重心，也不是唯一入口**。指标口径一律引用 `docs/20-domain/metrics.md`。登记见 `index.md`。
-> 版本 v0.4 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**草案**（机器契约已冻结，未实跑校准）。Shopify 细则见 ADR-019～065；跨平台/TikTok 见 ADR-068；动态平台与发布契约见 ADR-069。执行以 `monthly-business-review/manifest.yaml` 为准，本文只作人读说明。
+> 版本 v0.5 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效·未实现/未实跑校准**。Shopify 细则见 ADR-019～065；跨平台/TikTok 见 ADR-068；动态平台与发布契约见 ADR-069；实现就绪校正见 ADR-070。执行以 `monthly-business-review/manifest.yaml` 为准，本文只作人读说明。
 
 ## 1. 场景目标
 
@@ -12,7 +12,7 @@
 | 层 | 指标编码 | 说明 |
 |---|---|---|
 | 规模 | M101 / M102 / M103 / M104 / M105 / M106 | GMV、净销售额、订单、件数、AOV、ASP |
-| 效率 | M105 / M106 / M210 / M207a / M207b | M105/M106/M207a 随核心总账；M210 需 traffic；M207b 需 return_quantity。缺可选能力先询问，不补 0 |
+| 效率 | M105 / M106 / M210 / M207a / M207b | M105/M207a 与 M106 账户级 ASP 随核心总账；M106 商品/型号维需 product_identity；M210 需 traffic；M207b 需 return_quantity。缺可选能力先询问，不补 0 |
 | ~~成本利润~~ | ~~M201–M206、M208、M209~~ | ⛔ **首期不纳入设计范围**（ADR-027 / ADR-058 / R-42）：毛利、毛利率、佣金率、广告费率、履约、仓储、净利、净利率 |
 | 达成 | M301 / M302 / M303 | M301 需 targets；M302/M303 基于所选平台 canonical M102 |
 | 异动 | M401 / M402 | M401 基于核心总账；M402 各维度按 product/identity 等 capability 条件执行 |
@@ -55,16 +55,17 @@
 
 | 步 | 动作 | 卡点 |
 |---|---|---|
-| 1 | 校验用户显式提交的 `target_platforms`；按核心能力调用各 adapter，生成逐源 manifest + canonical 工件 + capability/coverage | 缺核心能力进入 alignment，不得 waiver |
+| 1 | 校验用户显式提交的 `target_platforms`；只读 registry、adapter 元数据与 source contract 做 capability preflight，**不读取业务数据** | 缺核心能力进入 alignment，不得 waiver |
 | 2 | Orchestrator 按 manifest + Profile **确定性物化** `plan.md`（非 LLM）：平台/维度/metric refs/rule packs/大纲/验收标准 | **C1**：平台集合或整体指纹变化重审 |
-| 3 | 按分支生成原料 SQL，全量留档。时间窗声明 canonical `order_created_date`，由 adapter 映射物理字段；允许无 LIMIT | **C2**：未变化组件可按完整 step 指纹复用 |
-| 4 | 执行派生计算（groupby / 透视 / 同比环比），自动放行并留档 | — |
-| 5 | Validator 断言：对账、量纲、空值率、能力/映射覆盖率、逐源水位。新可选缺口逐项询问；无人值守生成 ticket | 未关闭 alignment 只能 dry-run |
-| 6 | Reporter 渲染候选 `report.md` + `charts.html`；unsupported 可选章节经 run-only waiver 后省略，能力矩阵必须保留 | — |
-| 7 | 封存候选证据包：报告、逐源 manifest、SQL/代码、参数/模型、断言、trace 索引；计算总 hash | 封存后内容不可变 |
-| 8 | Evaluator 只读候选包，按 rubric 与 report tier 规则打分并执行重跑一致性校验 | — |
-| 9 | 审核封存候选包 hash | **C3 每次人工审核** |
-| 10 | 发布：水位未齐但其余正式条件满足 = formal_partial；全部目标核心源齐备 = formal_final；迟到数据出新版本，不覆盖 | alignment/draft/未认证组件只可 dry-run |
+| 3 | 按分支生成原料 SQL并归档。时间窗声明 canonical `order_created_date`，由 adapter 映射物理字段；允许无 LIMIT | **C2**：未变化组件可按完整 step 指纹复用 |
+| 4 | C2 通过后执行快照与 adapter，生成逐源 manifest、canonical 工件及 capability/coverage | 未授权 SQL 不得执行 |
+| 5 | 执行指标与派生计算（groupby / 透视 / 同比环比），自动放行并留档 | — |
+| 6 | Validator 断言：对账、量纲、空值率、能力/映射覆盖率、逐源水位。新可选缺口逐项询问；无人值守生成 ticket | 未关闭 alignment 只能 dry_run |
+| 7 | Reporter 渲染候选 `report.md` + `charts.html`；unsupported 可选章节经 run-only waiver 后省略，能力矩阵必须保留 | — |
+| 8 | 封存候选证据包：报告、逐源 manifest、SQL/代码、参数/模型、断言、trace 索引；计算总 hash | 封存后内容不可变 |
+| 9 | Evaluator 只读候选包，按 rubric 与 report tier 规则打分并执行重跑一致性校验 | — |
+| 10 | 审核封存候选包 hash | **C3 每次人工审核** |
+| 11 | 发布：水位未齐但其余正式条件满足 = formal_partial；全部目标核心源齐备 = formal_final；迟到数据出新版本，不覆盖 | alignment/draft/未认证组件只可 dry_run |
 
 ## 5. 报告结构（report.md）
 

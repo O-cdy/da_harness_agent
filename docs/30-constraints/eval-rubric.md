@@ -1,7 +1,7 @@
 # 30 · 评估量表（Eval Rubric）
 
 > 唯一职责：定义候选报告封包后的评估量表。任一适用项「不通过」即阻断 C3/正式发布；确认属于新错误家族时落 `errors/E-NNNN`，修复后重跑。
-> 版本 v0.3 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**。通用基线适用于全部任务；场景要求由 playbook overlay 声明（ADR-068/069，R-95/R-99～R-101）。
+> 版本 v0.4 | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效**。通用基线适用于全部任务；场景要求由 playbook overlay 机器 id 声明（ADR-068～070，R-95/R-99～R-101）。
 
 ## 六项评分
 
@@ -31,13 +31,17 @@
 
 `formal_partial` 与 `formal_final` 是报告等级，不是 `run_status`。`data_completeness` 只表示目标平台源齐备状态。三者必须独立记录。
 
-## Playbook eval overlay
+## Eval overlay 注册表
 
-| 场景 | 附加判据 |
-|---|---|
-| `monthly-business-review` | Top 异动须有能力允许范围内的 M401/M402；动态目标平台总览给逐平台 readiness 与 capability matrix；仅水位未齐可 `formal_partial` |
-| `ask` 探索 | provisional 指标有定义/SQL/快照/醒目标识；未经确认不得发布为正式报告 |
-| TikTok platform-native | 官方来源、适用地区、检索日期、归因窗口与实现状态齐备；不得进入 canonical 合计 |
+manifest 的 `eval_overlays[]` 只能引用本表机器 id；未知 id 阻断加载。
+
+| 机器 id | 适用范围 | 附加判据 |
+|---|---|---|
+| `monthly_business_review` | 经营月报 | Top 异动须有能力允许范围内的 M401/M402；unsupported 可选章节按 run-only waiver 省略 |
+| `cross_platform_coverage` | 多平台 Playbook | 动态目标平台总览给逐平台 readiness、capability matrix、source hash 与覆盖率；platform-native 不得进入 canonical 合计 |
+| `report_tier_consistency` | 有正式发布等级的 Playbook | 三个状态轴一致；只有水位未齐可 `formal_partial`；核心能力、FX、quality 或 alignment 缺口阻断 formal |
+| `ask_exploration` | `ask` 探索 | provisional 指标有定义/SQL/快照/醒目标识；未经确认不得发布为正式报告 |
+| `platform_native_officiality` | 平台原生扩展 | 官方来源、适用地区、检索日期、归因窗口与实现状态齐备；不得进入 canonical 合计 |
 
 ## 常见失败模式（预防清单）
 
