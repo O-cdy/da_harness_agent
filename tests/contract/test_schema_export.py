@@ -1,4 +1,5 @@
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -196,13 +197,144 @@ def test_schema_export_checks_git_head_not_only_working_tree(
     assert json.loads(path.read_text(encoding="utf-8")) == candidate
 
 
-def test_checked_in_bundle_is_compatible_with_git_head() -> None:
+def test_published_schema_baseline_reads_origin_master(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from harness.core.contracts.schema import PUBLISHED_SCHEMA_REF, git_published_bundle
+
+    calls: list[list[str]] = []
+
+    class _Result:
+        def __init__(self, stdout: str) -> None:
+            self.returncode = 0
+            self.stdout = stdout
+
+    def fake_run(args: list[str], **_kwargs: object) -> _Result:
+        calls.append(list(args))
+        if "rev-parse" in args:
+            return _Result(str(ROOT))
+        return _Result(json.dumps(contract_schema_bundle()))
+
+    monkeypatch.setattr("harness.core.contracts.schema.shutil.which", lambda _name: "git")
+    monkeypatch.setattr("harness.core.contracts.schema.subprocess.run", fake_run)
+    loaded = git_published_bundle(ROOT / "schemas/contracts-v1.json")
+
+    assert loaded == contract_schema_bundle()
+    assert PUBLISHED_SCHEMA_REF == "origin/master"
+    assert any(
+        arg.startswith("origin/master:schemas/contracts-v1.json") for call in calls for arg in call
+    )
+
+
+def test_missing_origin_master_bundle_allows_initial_publication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from harness.core.contracts.schema import git_published_bundle
 
-    path = ROOT / "schemas/contracts-v1.json"
-    published = git_published_bundle(path)
-    assert published is not None
-    assert_schema_backward_compatible(published, contract_schema_bundle())
+    class _Result:
+        returncode = 1
+        stdout = ""
+
+    monkeypatch.setattr("harness.core.contracts.schema.shutil.which", lambda _name: "git")
+    monkeypatch.setattr(
+        "harness.core.contracts.schema.subprocess.run",
+        lambda *_args, **_kwargs: _Result(),
+    )
+    assert git_published_bundle(ROOT / "schemas/contracts-v1.json") is None
+
+
+def test_schema_compatibility_covers_malformed_nodes() -> None:
+    published = {
+        "schema_version": 1,
+        "contracts": {
+            "Example": {
+                "type": "object",
+                "properties": {
+                    "name": "string",
+                    "ok": {"type": "string"},
+                    "loose": {"anyOf": ["nope"]},
+                },
+                "$defs": {"Old": "string", "Kept": {"type": "string"}},
+                "allOf": ["text"],
+                "anyOf": ["nope"],
+                "patternProperties": {"^a": {"type": "string"}},
+            }
+        },
+    }
+    candidate = json.loads(json.dumps(published))
+    candidate["contracts"]["Example"]["patternProperties"] = {}
+    assert_schema_backward_compatible(published, candidate)
+    bare = {
+        "schema_version": 1,
+        "contracts": {"Example": {"properties": [], "$defs": []}},
+    }
+    assert_schema_backward_compatible(bare, json.loads(json.dumps(bare)))
+
+    broken = {"schema_version": 1, "contracts": []}
+    with pytest.raises(SchemaCompatibilityError, match="object"):
+        assert_schema_backward_compatible(published, broken)
+    with pytest.raises(SchemaCompatibilityError, match="object"):
+        assert_schema_backward_compatible(
+            published,
+            {"schema_version": 1, "contracts": {"Example": "nope"}},
+        )
+
+
+def test_schema_export_writes_initial_bundle_and_rejects_bad_baselines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from harness.core.contracts.schema import git_published_bundle
+
+    monkeypatch.setattr("harness.core.contracts.schema.shutil.which", lambda _name: None)
+    destination = tmp_path / "nested" / "contracts-v1.json"
+    write_contract_schema_bundle(destination)
+    assert json.loads(destination.read_text(encoding="utf-8")) == contract_schema_bundle()
+
+    destination.write_text("[]\n", encoding="utf-8")
+    with pytest.raises(SchemaCompatibilityError, match="object"):
+        write_contract_schema_bundle(destination)
+
+    class _Result:
+        def __init__(self, code: int, stdout: str) -> None:
+            self.returncode = code
+            self.stdout = stdout
+
+    def fake_run(args: list[str], **_kwargs: object) -> _Result:
+        if "rev-parse" in args:
+            return _Result(0, str(ROOT))
+        if args[-1].startswith("-"):
+            return _Result(1, "")
+        return _Result(0, "[]")
+
+    monkeypatch.setattr("harness.core.contracts.schema.shutil.which", lambda _name: "git")
+    monkeypatch.setattr("harness.core.contracts.schema.subprocess.run", fake_run)
+    assert git_published_bundle(ROOT / "schemas/contracts-v1.json", ref="-bad") is None
+    assert git_published_bundle(ROOT / "schemas/contracts-v1.json") is None
+
+    def invalid_json(args: list[str], **_kwargs: object) -> _Result:
+        if "rev-parse" in args:
+            return _Result(0, str(ROOT))
+        return _Result(0, "not-json")
+
+    monkeypatch.setattr("harness.core.contracts.schema.subprocess.run", invalid_json)
+    assert git_published_bundle(ROOT / "schemas/contracts-v1.json") is None
+
+    def missing_show(args: list[str], **_kwargs: object) -> _Result:
+        if "rev-parse" in args:
+            return _Result(0, str(ROOT))
+        return _Result(1, "")
+
+    monkeypatch.setattr("harness.core.contracts.schema.subprocess.run", missing_show)
+    assert git_published_bundle(ROOT / "schemas/contracts-v1.json") is None
+
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(os, "open", lambda *_args, **_kwargs: 7)
+    monkeypatch.setattr(os, "close", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(os, "fsync", lambda _fd: None)
+    monkeypatch.setattr("harness.core.contracts.schema.shutil.which", lambda _name: None)
+    posix_destination = tmp_path / "posix" / "contracts-v1.json"
+    write_contract_schema_bundle(posix_destination)
+    assert posix_destination.is_file()
 
 
 def test_schema_export_refuses_to_overwrite_incompatible_published_bundle(

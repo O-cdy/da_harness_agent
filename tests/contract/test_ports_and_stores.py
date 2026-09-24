@@ -1,6 +1,10 @@
 import hashlib
 import json
+import os
+import stat
+import sys
 import time
+import types
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -532,3 +536,204 @@ def test_revision_cas_allows_only_one_concurrent_writer(
         results = list(pool.map(lambda _: attempt(), range(4)))
 
     assert results.count(True) == 1
+
+
+def test_store_rejects_resolved_path_escape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_resolve = Path.resolve
+
+    def resolve_escape(self: Path, *args: object, **kwargs: object) -> Path:
+        if self.name == "ok.json":
+            return Path("D:/outside/ok.json")
+        return real_resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve_escape)
+    with pytest.raises(PathBoundaryError, match="outside"):
+        FileConfigStore(tmp_path).load("ok.json", NoOp)
+
+
+def test_missing_store_leaf_is_not_a_reparse_point(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        FileConfigStore(tmp_path / "not-created-yet").load("missing.json", NoOp)
+
+
+def test_symlink_mode_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "linked"
+    root.mkdir()
+    real_lstat = Path.lstat
+
+    class _Link:
+        st_mode = stat.S_IFLNK
+        st_file_attributes = 0
+
+    def fake_lstat(self: Path) -> object:
+        if self == root:
+            return _Link()
+        return real_lstat(self)
+
+    monkeypatch.setattr(Path, "lstat", fake_lstat)
+    with pytest.raises(PathBoundaryError, match="redirected"):
+        FileConfigStore(root)
+
+
+def test_posix_lock_and_directory_fsync(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from harness.core.storage.files import _atomic_write, _exclusive_lock
+
+    fcntl_module = types.ModuleType("fcntl")
+    fcntl_module.LOCK_EX = 1
+    fcntl_module.LOCK_UN = 2
+    fcntl_module.flock = lambda *_args: None
+    monkeypatch.setitem(sys.modules, "fcntl", fcntl_module)
+    monkeypatch.setattr(sys, "platform", "linux")
+    lock_path = tmp_path / "store.lock"
+    with _exclusive_lock(lock_path):
+        assert lock_path.exists()
+
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(os, "open", lambda *_args, **_kwargs: 7)
+    monkeypatch.setattr(os, "close", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(os, "fsync", lambda _fd: None)
+    target = tmp_path / "payload.bin"
+    _atomic_write(target, b"ok")
+    assert target.read_bytes() == b"ok"
+
+
+def test_config_migration_rejects_non_object_bool_version_and_transform_errors(
+    tmp_path: Path,
+) -> None:
+    store = FileConfigStore(tmp_path)
+    (tmp_path / "list.json").write_text("[]", encoding="utf-8")
+    with pytest.raises(ConfigMigrationError, match="object"):
+        store.migrate("list.json", "out.json", ConfigV2, V1ToV2())
+
+    (tmp_path / "bool.json").write_text(
+        '{"schema_version": true, "value": "raw"}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigMigrationError, match="unknown source"):
+        store.migrate("bool.json", "bool-out.json", ConfigV2, V1ToV2())
+
+    (tmp_path / "profile-v1.json").write_text(
+        '{"schema_version":1,"value":"raw"}',
+        encoding="utf-8",
+    )
+
+    class Boom(V1ToV2):
+        def apply(self, payload: dict[str, Any]) -> dict[str, Any]:
+            raise RuntimeError("boom")
+
+    with pytest.raises(ConfigMigrationError, match="transform failed"):
+        store.migrate("profile-v1.json", "boom.json", ConfigV2, Boom())
+
+    class Incomplete(V1ToV2):
+        def apply(self, payload: dict[str, Any]) -> dict[str, Any]:
+            return {"schema_version": 2}
+
+    with pytest.raises(ConfigMigrationError, match="target validation"):
+        store.migrate("profile-v1.json", "incomplete.json", ConfigV2, Incomplete())
+
+
+def test_artifact_index_and_record_integrity(tmp_path: Path) -> None:
+    store = FileArtifactStore(tmp_path)
+    first = store.put(artifact(b"one", "artifact-1"), b"one", idem())
+    second_key = IdempotencyKey(
+        run_id="run-1",
+        plan_revision=1,
+        step_id="step-2",
+        input_fingerprint="sha256:input",
+    )
+    store.put(artifact(b"two", "artifact-2"), b"two", second_key)
+    index_path = tmp_path / "artifacts" / "_index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index_path.write_text("[]", encoding="utf-8")
+    with pytest.raises(FileNotFoundError):
+        store.read_payload(first)
+    store.put(
+        artifact(b"three", "artifact-3"),
+        b"three",
+        IdempotencyKey(
+            run_id="run-1",
+            plan_revision=1,
+            step_id="step-3",
+            input_fingerprint="sha256:input",
+        ),
+    )
+
+    index_path.write_text(json.dumps({first.artifact_id: f"{'a' * 64}.json"}), encoding="utf-8")
+    with pytest.raises(FileNotFoundError):
+        store.read_payload(first)
+
+    index_path.write_text(
+        json.dumps({first.artifact_id: index["artifact-2"]}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ArtifactIntegrityError, match="index"):
+        store.read_payload(first)
+
+    record_path = tmp_path / "artifacts" / index["artifact-1"]
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["idempotency_key"]["step_id"] = "tampered"
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ArtifactIntegrityError, match="mismatch"):
+        store.get(idem())
+
+
+def test_terminal_and_mismatched_run_updates_are_rejected(tmp_path: Path) -> None:
+    store = FileRunStateStore(tmp_path)
+    current = store.compare_and_swap(snapshot(), expected_revision=None)
+    with pytest.raises(InvalidRunTransition, match="plan_revision"):
+        store.compare_and_swap(
+            current.model_copy(update={"plan_revision": 2}),
+            expected_revision=current.revision,
+        )
+    current = store.load("run-1")
+    assert current is not None
+    for target in (
+        RunStatus.PLANNING,
+        RunStatus.PLANNED,
+        RunStatus.AWAITING_C1,
+        RunStatus.PREPARING_SQL,
+        RunStatus.AWAITING_C2,
+        RunStatus.SNAPSHOTTING,
+        RunStatus.RUNNING,
+        RunStatus.VALIDATING,
+        RunStatus.RENDERING,
+        RunStatus.SEALING,
+        RunStatus.EVALUATING,
+        RunStatus.AWAITING_C3,
+        RunStatus.COMPLETED,
+    ):
+        current = store.compare_and_swap(
+            transition_run(current, target),
+            expected_revision=current.revision,
+        )
+    with pytest.raises(InvalidRunTransition):
+        store.compare_and_swap(current, expected_revision=current.revision)
+
+    fresh = FileRunStateStore(tmp_path / "other")
+    created = fresh.compare_and_swap(snapshot(), expected_revision=None)
+    illegal = transition_run(created, RunStatus.PLANNING).model_copy(update={"checkpoint": "extra"})
+    with pytest.raises(InvalidRunTransition, match="does not match"):
+        fresh.compare_and_swap(illegal, expected_revision=created.revision)
+
+
+def test_migration_destination_race_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "profile-v1.json").write_text(
+        '{"schema_version":1,"value":"raw"}',
+        encoding="utf-8",
+    )
+    real_exists = Path.exists
+    seen = {"destination": 0}
+
+    def exists(self: Path) -> bool:
+        if self.name == "race.json":
+            seen["destination"] += 1
+            return seen["destination"] > 1
+        return real_exists(self)
+
+    monkeypatch.setattr(Path, "exists", exists)
+    with pytest.raises(ConfigMigrationError, match="already exists"):
+        FileConfigStore(tmp_path).migrate("profile-v1.json", "race.json", ConfigV2, V1ToV2())

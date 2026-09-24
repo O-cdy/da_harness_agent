@@ -19,9 +19,6 @@ dependencies = [
   "typer>=0.16,<1",
 ]
 
-[project.scripts]
-harness = "harness.cli.app:app"
-
 [dependency-groups]
 dev = [
   "build>=1.2,<2",

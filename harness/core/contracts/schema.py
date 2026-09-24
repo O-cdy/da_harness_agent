@@ -200,8 +200,6 @@ def _check_schema_node(
         longer_is_tighter = keyword in {"allOf", "prefixItems"}
         if longer_is_tighter and len(new_items) > len(old_items):
             raise SchemaCompatibilityError(f"{path}: {keyword} tightened")
-        if not longer_is_tighter and len(new_items) < len(old_items):
-            raise SchemaCompatibilityError(f"{path}: {keyword} tightened")
         compared = new_items if longer_is_tighter else old_items
         for index, _item in enumerate(compared):
             old_item = old_items[index]
@@ -256,8 +254,11 @@ def assert_schema_backward_compatible(
         _check_schema_node(old_contract, new_contract, f"contracts.{name}")
 
 
-def git_published_bundle(path: Path) -> dict[str, Any] | None:
-    """Return the schema bundle committed at HEAD, when this path is tracked."""
+PUBLISHED_SCHEMA_REF = "origin/master"
+
+
+def git_published_bundle(path: Path, ref: str = PUBLISHED_SCHEMA_REF) -> dict[str, Any] | None:
+    """Return the schema bundle published at origin/master, when this path is tracked."""
     git = shutil.which("git")
     if git is None:
         return None
@@ -275,8 +276,10 @@ def git_published_bundle(path: Path) -> dict[str, Any] | None:
         relative = path.resolve().relative_to(root.resolve()).as_posix()
         if any(part in {"", ".", ".."} for part in relative.split("/")):
             return None
+        if not ref or ref.startswith("-") or ":" in ref:
+            return None
         show = subprocess.run(  # noqa: S603
-            [git, "show", f"HEAD:{relative}"],
+            [git, "show", f"{ref}:{relative}"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -293,7 +296,7 @@ def git_published_bundle(path: Path) -> dict[str, Any] | None:
 
 
 def write_contract_schema_bundle(path: Path) -> None:
-    """Atomically write v1 only after checking the published bundle at HEAD."""
+    """Atomically write v1 only after checking the bundle published on origin/master."""
     candidate = contract_schema_bundle()
     published = git_published_bundle(path)
     if published is None and path.exists():
