@@ -2,7 +2,7 @@
 
 > 本文件是本项目**唯一**的进度与上下文同步文档。约束见 `AGENTS.md` 守则 1。
 > 任何 agent 在「开始 / 切换 / 完成」任务时点必须更新本文件；新 agent / 新会话 / 发现本节有未读更新时，必须先读 `AGENTS.md` 守则 0 再工作，只续写、不覆盖。
-> 最后更新：2026-09-25 00:45 | 更新者：Cursor Agent
+> 最后更新：2026-09-25 01:13 | 更新者：Cursor Agent
 
 ---
 
@@ -125,6 +125,7 @@
 | 2026-09-24 20:29 | Cursor Agent | **G0 安全准入与 S0-01 工程基线启动**：固定版 gitleaks 对全部历史扫描 6 commits/0 findings；ADR-071 冻结公开仓库安全边界；Python 3.13.12 + uv lock + CI/PR/CODEOWNERS + 构建冒烟已落地 | ADR-071；gitleaks 8.30.1；`pyproject.toml`、`uv.lock`、`.github/`；4 项治理/包冒烟测试通过 |
 | 2026-09-24 23:22 | Cursor Agent | **S0-02 合同与存储审查缺口关闭**：分支 CAS 必须经过 `transition_branch`；Windows 设备名与重解析点根目录被拒绝；schema 收紧约束对照 Git HEAD。Python 3.13.12 下 90 passed / 1 skipped，总覆盖率 91.30%，Ruff 与 mypy 通过。GitHub PR 与分支保护仍因未认证未完成 | `harness/core/contracts/`、`harness/core/storage/files.py`、`tests/contract/` |
 | 2026-09-25 00:45 | Cursor Agent | **S0-02 准出补齐**：schema 发布基线改为 `origin/master`；`schema.py` 分支覆盖 98%，`files.py` 100%；去掉尚不存在的 CLI 入口。全量 101 passed / 1 skipped，总覆盖率 97.81% | `harness/core/contracts/schema.py`、`pyproject.toml`、`tests/contract/` |
+| 2026-09-25 01:13 | Cursor Agent | **S0-03 至 S7 本地切片落地**：控制面、编排器、CLI、合成适配、SQL 守卫、指标、Skill、封包报告与无密钥模型口均有测试。119 passed / 1 skipped，总覆盖率 98.42%。真实库零写入与 GitHub PR 未验证 | `0687a0f`、`0f30f98`、`cba57d1` |
 
 ## 4. 进行中的任务及负责人
 
@@ -142,7 +143,8 @@
 | Harness 架构契约收口（动态平台 / 能力门禁 / 运行与审批契约） | Atlas | **已完成** 2026-09-24 18:02 | ADR-069 + 架构/规则/指标/数据源/Playbook/Eval/Profile 与机器 manifest 同步；YAML/引用/表格/补丁一致性验证通过；不写 harness 业务代码 |
 | GitHub 远端接入与 Cloud 开发准备 | Atlas | **已完成** 2026-09-24 18:36 | `master` 已推送并跟踪 `origin/master`；Cloud Agent 可从该远端分支启动 |
 | S0 开工前实现就绪复核（文档契约一致性 / 设计稳健性） | Atlas | **已完成** 2026-09-24 19:02 | ADR-070；跨 SSOT/机器契约独立三轮复核无剩余 S0 开工阻断；S0 应创建的代码/schema/echo fixture 未提前实现 |
-| Harness 产品化实施 G0/S0 | Cursor Agent | **进行中** 2026-09-24 23:22 | `feat/harness-productization`；G0 本地准入与 S0-01/S0-02 合同存储已落地；GitHub 分支保护仍待认证；下一刀 S0-03 |
+| Harness 产品化实施 G0/S0–S7 | Cursor Agent | **本地切片已落地** 2026-09-25 01:13 | `feat/harness-productization`：`0687a0f` 控制面，`0f30f98` 编排器至报告/模型口，`cba57d1` Semgrep pin。真实库零写入未跑 |
+| GitHub PR 与 master 保护 | 用户登录后由 Cursor Agent 执行 | **未开始** 2026-09-25 01:13 | 本机无 `gh`。保护规则生效前不合并 |
 
 ## 5. 待办与优先级排序
 
@@ -162,11 +164,11 @@
 
 | 优先级 | 待办 | 负责人 | 依赖 |
 |---|---|---|---|
-| **P1** | **S0 骨架**：typed Port/registry + Playbook/Rule Pack 机器 manifest + Run/Error/Artifact 三维契约 + CLI `run`/`ask`/`playbooks` + 非月报 fixture + no-op（ADR-066～070） | Cursor Agent | 合同与文件存储已在 `feat/harness-productization` 落地；Registry/Policy/Memory/Orchestrator/CLI 仍按准出顺序实现 |
-| **P1** | S1–S7 按架构 §11：认证 PlatformAdapter → canonical → MetricRegistry → 场景技能 → 封包后校验评估 → 动态平台报告 → LLM `ask` | Atlas | S0 |
-| **P1** | 能力层落地：`core/llm/`、`core/skills/` SK-01~08；MCP/Web/Schedule 仅保留 Port + no-op，不铺空目录 | Atlas | S0 |
-| **P1** | 接真实库（只读）分别认证 Shopify/TikTok adapter，并按每次显式 `target_platforms` 跑通端到端月报；TikTok Affiliate/LIVE 原生模块不进 canonical 合计 | Atlas | S1 起 |
-| **P1** | Reporter 实现：Markdown 主报告 + HTML 交互图表，产物入 `runs/<task>/report/` | Atlas | S6 |
+| **P1** | **S0 骨架**：typed Port、Registry/Policy/Memory、Orchestrator、CLI `run`/`ask`/`playbooks`、echo fixture 与禁用口 | Cursor Agent | 本地已落地于 `0687a0f`、`0f30f98`。GitHub 保护仍未配置 |
+| **P1** | S1–S7 本地切片：合成 PlatformAdapter、SQL 守卫、M101–M106/M207、SK-01/02/03/08、封包校验、按 outline 出报告、无密钥 `ask` | Cursor Agent | 见 `0f30f98`。真实库只读零写入**未验证** |
+| **P1** | 能力层：MCP/Web/Schedule/Session/向量只返回 NoOp，不建存储后端 | Cursor Agent | `harness/core/noop.py`；启用须另立 ADR |
+| **P1** | 接真实库（只读）认证 Shopify/TikTok adapter，并按显式 `target_platforms` 跑通月报。Affiliate/LIVE 不进 canonical 合计 | Cursor Agent | 缺本次只读会话，尚未证明零写入 |
+| **P1** | Reporter：Markdown 与 HTML 按 `plan.outline` 渲染 | Cursor Agent | 本地渲染已在 `0f30f98`；未对真实月报跑出报告 |
 | **P1** | 新老客分层（M501–M507）接入月报 | Atlas | S4 |
 | P2 | 大促日历（`promo_calendar.events`）—— 用户 2026-09-22 确认**暂不提供**；`enabled=false`，`missing_behavior=annotate_not_block`（ADR-054 / R-70）。补日历后打开 `enabled` | 用户 | 需要时再补 |
 | **P1** | 每个里程碑执行一次冗余巡检（守则 9），清理清单需确认后再删 | Atlas | 里程碑节点 |
@@ -371,3 +373,4 @@
 | 2026-09-24 20:29 | Cursor Agent | G0 本地门禁通过：gitleaks 8.30.1 扫描全部 6 个提交、555.34 KB、0 findings；`.env` 已忽略/未跟踪/历史 0 次。追加 ADR-071 与 R-103～R-105；建立 Python 3.13.12、uv 0.12.18、锁文件、最小包、CI、PR 模板、CODEOWNERS；GitHub 分支保护待首个 CI check 出现且需认证后配置 |
 | 2026-09-24 23:22 | Cursor Agent | 关闭 S0-02 剩余审查发现：分支提交走状态机、拒绝 Windows 设备名与重解析点、schema 兼容对照 HEAD。全量测试与 Ruff/mypy 通过；S0-03 尚未开始 |
 | 2026-09-25 00:45 | Cursor Agent | S0-02 准出补齐：发布 schema 对照 origin/master，边界覆盖率达标，移除不存在的 CLI 入口，更正第 5 节过期表述 |
+| 2026-09-25 01:13 | Cursor Agent | 本地落地 S0-03 至 S7：`0687a0f`、`0f30f98`、`cba57d1`。119 passed / 1 skipped，覆盖率 98.42%。守则 9 清单：无第二份进度文档，未删文件；真实库零写入与 GitHub PR/分支保护未验证，故不关闭这两项 |
