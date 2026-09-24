@@ -1,0 +1,1202 @@
+{
+  "contracts": {
+    "ApprovalRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "approved_at": {
+          "format": "date-time",
+          "title": "Approved At",
+          "type": "string"
+        },
+        "approver": {
+          "title": "Approver",
+          "type": "string"
+        },
+        "fingerprint": {
+          "title": "Fingerprint",
+          "type": "string"
+        },
+        "organization_id": {
+          "title": "Organization Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "scope": {
+          "enum": [
+            "c1",
+            "c2",
+            "c3"
+          ],
+          "title": "Scope",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organization_id",
+        "profile_version",
+        "fingerprint",
+        "approver",
+        "approved_at",
+        "scope"
+      ],
+      "title": "ApprovalRecord",
+      "type": "object"
+    },
+    "ArtifactEnvelope": {
+      "$defs": {
+        "ArtifactClassification": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ],
+          "title": "ArtifactClassification",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "classification": {
+          "$ref": "#/$defs/ArtifactClassification"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "input_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Refs",
+          "type": "array"
+        },
+        "producer": {
+          "title": "Producer",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "type",
+        "content_hash",
+        "producer",
+        "input_refs",
+        "created_at",
+        "classification",
+        "revision"
+      ],
+      "title": "ArtifactEnvelope",
+      "type": "object"
+    },
+    "ErrorEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "cause_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cause Ref"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "module_id": {
+          "title": "Module Id",
+          "type": "string"
+        },
+        "plan_revision": {
+          "minimum": 1,
+          "title": "Plan Revision",
+          "type": "integer"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "safe_message": {
+          "title": "Safe Message",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "severity": {
+          "title": "Severity",
+          "type": "string"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Id"
+        }
+      },
+      "required": [
+        "code",
+        "category",
+        "severity",
+        "retryable",
+        "module_id",
+        "run_id",
+        "plan_revision",
+        "safe_message"
+      ],
+      "title": "ErrorEnvelope",
+      "type": "object"
+    },
+    "IdempotencyKey": {
+      "additionalProperties": false,
+      "properties": {
+        "input_fingerprint": {
+          "title": "Input Fingerprint",
+          "type": "string"
+        },
+        "plan_revision": {
+          "minimum": 1,
+          "title": "Plan Revision",
+          "type": "integer"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "step_id": {
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "plan_revision",
+        "step_id",
+        "input_fingerprint"
+      ],
+      "title": "IdempotencyKey",
+      "type": "object"
+    },
+    "NoOp": {
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "title": "Capability",
+          "type": "string"
+        },
+        "module_id": {
+          "title": "Module Id",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "module_id",
+        "reason",
+        "capability"
+      ],
+      "title": "NoOp",
+      "type": "object"
+    },
+    "Plan": {
+      "$defs": {
+        "PlanStep": {
+          "additionalProperties": false,
+          "properties": {
+            "depends_on": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Depends On",
+              "type": "array"
+            },
+            "input_fingerprint": {
+              "title": "Input Fingerprint",
+              "type": "string"
+            },
+            "metric_refs": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Metric Refs"
+            },
+            "on_unsupported": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "await_alignment",
+                    "skip_optional"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "On Unsupported"
+            },
+            "platform_scope": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Platform Scope",
+              "type": "array"
+            },
+            "required_capabilities": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Required Capabilities"
+            },
+            "rule_packs": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Rule Packs"
+            },
+            "schema_version": {
+              "const": 1,
+              "default": 1,
+              "title": "Schema Version",
+              "type": "integer"
+            },
+            "step_id": {
+              "title": "Step Id",
+              "type": "string"
+            },
+            "type": {
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "step_id",
+            "type",
+            "depends_on",
+            "platform_scope",
+            "input_fingerprint"
+          ],
+          "title": "PlanStep",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_criteria": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Acceptance Criteria",
+          "type": "array"
+        },
+        "outline": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Outline",
+          "type": "array"
+        },
+        "plan_revision": {
+          "minimum": 1,
+          "title": "Plan Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/PlanStep"
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        },
+        "target_platforms": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Target Platforms",
+          "type": "array"
+        }
+      },
+      "required": [
+        "plan_revision",
+        "target_platforms",
+        "acceptance_criteria",
+        "outline",
+        "steps"
+      ],
+      "title": "Plan",
+      "type": "object"
+    },
+    "PlanStep": {
+      "additionalProperties": false,
+      "properties": {
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "input_fingerprint": {
+          "title": "Input Fingerprint",
+          "type": "string"
+        },
+        "metric_refs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metric Refs"
+        },
+        "on_unsupported": {
+          "anyOf": [
+            {
+              "enum": [
+                "await_alignment",
+                "skip_optional"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Unsupported"
+        },
+        "platform_scope": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Platform Scope",
+          "type": "array"
+        },
+        "required_capabilities": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required Capabilities"
+        },
+        "rule_packs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Packs"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "step_id": {
+          "title": "Step Id",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step_id",
+        "type",
+        "depends_on",
+        "platform_scope",
+        "input_fingerprint"
+      ],
+      "title": "PlanStep",
+      "type": "object"
+    },
+    "RunSnapshot": {
+      "$defs": {
+        "DataCompleteness": {
+          "enum": [
+            "partial",
+            "final"
+          ],
+          "title": "DataCompleteness",
+          "type": "string"
+        },
+        "ErrorEnvelope": {
+          "additionalProperties": false,
+          "properties": {
+            "category": {
+              "title": "Category",
+              "type": "string"
+            },
+            "cause_ref": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cause Ref"
+            },
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "module_id": {
+              "title": "Module Id",
+              "type": "string"
+            },
+            "plan_revision": {
+              "minimum": 1,
+              "title": "Plan Revision",
+              "type": "integer"
+            },
+            "retryable": {
+              "title": "Retryable",
+              "type": "boolean"
+            },
+            "run_id": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "safe_message": {
+              "title": "Safe Message",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": 1,
+              "default": 1,
+              "title": "Schema Version",
+              "type": "integer"
+            },
+            "severity": {
+              "title": "Severity",
+              "type": "string"
+            },
+            "step_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Step Id"
+            }
+          },
+          "required": [
+            "code",
+            "category",
+            "severity",
+            "retryable",
+            "module_id",
+            "run_id",
+            "plan_revision",
+            "safe_message"
+          ],
+          "title": "ErrorEnvelope",
+          "type": "object"
+        },
+        "ReportTier": {
+          "enum": [
+            "dry_run",
+            "formal_partial",
+            "formal_final"
+          ],
+          "title": "ReportTier",
+          "type": "string"
+        },
+        "RunStatus": {
+          "enum": [
+            "created",
+            "planning",
+            "planned",
+            "awaiting_c1",
+            "preparing_sql",
+            "awaiting_c2",
+            "snapshotting",
+            "running",
+            "validating",
+            "rendering",
+            "sealing",
+            "evaluating",
+            "awaiting_c3",
+            "completed",
+            "cancel_requested",
+            "cancelled",
+            "failed",
+            "revision_required",
+            "awaiting_alignment",
+            "waiting_data"
+          ],
+          "title": "RunStatus",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checkpoint"
+        },
+        "data_completeness": {
+          "$ref": "#/$defs/DataCompleteness"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "plan_revision": {
+          "minimum": 1,
+          "title": "Plan Revision",
+          "type": "integer"
+        },
+        "report_tier": {
+          "$ref": "#/$defs/ReportTier"
+        },
+        "resume_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "run_status": {
+          "$ref": "#/$defs/RunStatus"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "plan_revision",
+        "revision",
+        "run_status",
+        "data_completeness",
+        "report_tier"
+      ],
+      "title": "RunSnapshot",
+      "type": "object"
+    },
+    "SourceManifest": {
+      "$defs": {
+        "DataCompleteness": {
+          "enum": [
+            "partial",
+            "final"
+          ],
+          "title": "DataCompleteness",
+          "type": "string"
+        },
+        "SourceManifestEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "title": "Account Id",
+              "type": "string"
+            },
+            "adapter_contract_version": {
+              "title": "Adapter Contract Version",
+              "type": "string"
+            },
+            "adapter_id": {
+              "title": "Adapter Id",
+              "type": "string"
+            },
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Capabilities",
+              "type": "array"
+            },
+            "completeness": {
+              "$ref": "#/$defs/DataCompleteness"
+            },
+            "latency_window_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Latency Window Seconds"
+            },
+            "logical_connection": {
+              "title": "Logical Connection",
+              "type": "string"
+            },
+            "platform": {
+              "title": "Platform",
+              "type": "string"
+            },
+            "query_hash": {
+              "title": "Query Hash",
+              "type": "string"
+            },
+            "report_cutoff": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Report Cutoff"
+            },
+            "row_count": {
+              "minimum": 0,
+              "title": "Row Count",
+              "type": "integer"
+            },
+            "schema_fingerprint": {
+              "title": "Schema Fingerprint",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": 1,
+              "default": 1,
+              "title": "Schema Version",
+              "type": "integer"
+            },
+            "snapshot_hash": {
+              "title": "Snapshot Hash",
+              "type": "string"
+            },
+            "source_id": {
+              "title": "Source Id",
+              "type": "string"
+            },
+            "time_range_end": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Time Range End"
+            },
+            "time_range_start": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Time Range Start"
+            },
+            "watermark": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Watermark"
+            }
+          },
+          "required": [
+            "source_id",
+            "platform",
+            "account_id",
+            "logical_connection",
+            "adapter_id",
+            "adapter_contract_version",
+            "schema_fingerprint",
+            "query_hash",
+            "row_count",
+            "snapshot_hash",
+            "completeness",
+            "capabilities"
+          ],
+          "title": "SourceManifestEntry",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "plan_revision": {
+          "minimum": 1,
+          "title": "Plan Revision",
+          "type": "integer"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceManifestEntry"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "run_id",
+        "plan_revision",
+        "sources"
+      ],
+      "title": "SourceManifest",
+      "type": "object"
+    },
+    "SourceManifestEntry": {
+      "$defs": {
+        "DataCompleteness": {
+          "enum": [
+            "partial",
+            "final"
+          ],
+          "title": "DataCompleteness",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "title": "Account Id",
+          "type": "string"
+        },
+        "adapter_contract_version": {
+          "title": "Adapter Contract Version",
+          "type": "string"
+        },
+        "adapter_id": {
+          "title": "Adapter Id",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/DataCompleteness"
+        },
+        "latency_window_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latency Window Seconds"
+        },
+        "logical_connection": {
+          "title": "Logical Connection",
+          "type": "string"
+        },
+        "platform": {
+          "title": "Platform",
+          "type": "string"
+        },
+        "query_hash": {
+          "title": "Query Hash",
+          "type": "string"
+        },
+        "report_cutoff": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Report Cutoff"
+        },
+        "row_count": {
+          "minimum": 0,
+          "title": "Row Count",
+          "type": "integer"
+        },
+        "schema_fingerprint": {
+          "title": "Schema Fingerprint",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "snapshot_hash": {
+          "title": "Snapshot Hash",
+          "type": "string"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "time_range_end": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time Range End"
+        },
+        "time_range_start": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time Range Start"
+        },
+        "watermark": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Watermark"
+        }
+      },
+      "required": [
+        "source_id",
+        "platform",
+        "account_id",
+        "logical_connection",
+        "adapter_id",
+        "adapter_contract_version",
+        "schema_fingerprint",
+        "query_hash",
+        "row_count",
+        "snapshot_hash",
+        "completeness",
+        "capabilities"
+      ],
+      "title": "SourceManifestEntry",
+      "type": "object"
+    },
+    "TraceEvent": {
+      "$defs": {
+        "ArtifactClassification": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ],
+          "title": "ArtifactClassification",
+          "type": "string"
+        },
+        "TraceEventType": {
+          "enum": [
+            "state",
+            "tool",
+            "policy",
+            "llm",
+            "approval",
+            "artifact"
+          ],
+          "title": "TraceEventType",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "$ref": "#/$defs/ArtifactClassification"
+        },
+        "duration_ms": {
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "event_type": {
+          "$ref": "#/$defs/TraceEventType"
+        },
+        "input_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Refs",
+          "type": "array"
+        },
+        "plan_revision": {
+          "minimum": 1,
+          "title": "Plan Revision",
+          "type": "integer"
+        },
+        "result_summary": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Result Summary"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Id"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "event_type",
+        "run_id",
+        "plan_revision",
+        "timestamp",
+        "input_refs",
+        "result_summary",
+        "duration_ms",
+        "classification"
+      ],
+      "title": "TraceEvent",
+      "type": "object"
+    }
+  },
+  "schema_version": 1
+}
