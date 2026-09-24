@@ -7,7 +7,7 @@ import hashlib
 import importlib
 import json
 import os
-import re
+import stat
 import sys
 import threading
 from collections.abc import Iterator
@@ -27,6 +27,7 @@ from harness.core.contracts.state import (
     ReportTier,
     RunSnapshot,
     RunStatus,
+    assert_branch_commit,
     transition_run,
 )
 
@@ -70,8 +71,20 @@ class _ArtifactRecord(StrictContract):
 
 _LOCKS_GUARD = threading.Lock()
 _THREAD_LOCKS: dict[Path, threading.Lock] = {}
-_WINDOWS_DEVICE = re.compile(r"^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", re.IGNORECASE)
+_WINDOWS_DEVICES = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        "CONIN$",
+        "CONOUT$",
+        *(f"COM{index}" for index in range(1, 10)),
+        *(f"LPT{index}" for index in range(1, 10)),
+    }
+)
 _WINDOWS_FORBIDDEN_CHARS = frozenset('<>:"|?*')
+_REPARSE_POINT = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 
 
 @contextmanager
@@ -119,6 +132,28 @@ def _safe_path(root: Path, relative_path: str) -> Path:
     return candidate
 
 
+def _is_reparse_point(path: Path) -> bool:
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    if stat.S_ISLNK(info.st_mode):
+        return True
+    attributes = getattr(info, "st_file_attributes", 0)
+    return bool(attributes & _REPARSE_POINT)
+
+
+def trusted_directory(root: Path) -> Path:
+    """Return an absolute store root whose ancestors are not symlinks or junctions."""
+    absolute = Path(os.path.abspath(root))
+    cursor = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        cursor = cursor / part
+        if _is_reparse_point(cursor):
+            raise PathBoundaryError(f"refusing redirected store path: {cursor}")
+    return absolute
+
+
 def _validate_portable_component(component: str) -> None:
     if (
         not component
@@ -127,8 +162,9 @@ def _validate_portable_component(component: str) -> None:
         or any(character in _WINDOWS_FORBIDDEN_CHARS for character in component)
     ):
         raise PathBoundaryError(f"unsafe path component: {component!r}")
-    device_stem = component.split(".", 1)[0]
-    if _WINDOWS_DEVICE.fullmatch(device_stem):
+    normalized = component.rstrip(" .")
+    device_stem = normalized.split(".", 1)[0].strip().upper()
+    if device_stem in _WINDOWS_DEVICES or normalized.strip().upper() in _WINDOWS_DEVICES:
         raise PathBoundaryError(f"reserved Windows device name: {component}")
 
 
@@ -175,7 +211,7 @@ def _verify_content(envelope: ArtifactEnvelope, payload: bytes) -> None:
 
 class FileConfigStore:
     def __init__(self, root: Path) -> None:
-        self._root = root.resolve()
+        self._root = trusted_directory(root)
 
     def load(self, relative_path: str, model: type[ContractT]) -> ContractT:
         path = _safe_path(self._root, relative_path)
@@ -227,7 +263,7 @@ class FileConfigStore:
 
 class FileArtifactStore:
     def __init__(self, root: Path) -> None:
-        self._root = root.resolve()
+        self._root = trusted_directory(root)
         self._artifact_root = self._root / "artifacts"
 
     def _path(self, key: IdempotencyKey) -> Path:
@@ -245,6 +281,7 @@ class FileArtifactStore:
             if existing is not None:
                 existing_payload = base64.b64decode(existing.payload_base64, validate=True)
                 if existing.envelope == envelope and existing_payload == payload:
+                    self._remember(envelope.artifact_id, path.name)
                     return existing.envelope
                 raise IdempotencyConflict(
                     "idempotency key already committed with different envelope or payload"
@@ -256,6 +293,7 @@ class FileArtifactStore:
                 payload_base64=base64.b64encode(payload).decode("ascii"),
             )
             _atomic_write(path, record.model_dump_json().encode())
+            self._remember(envelope.artifact_id, path.name)
             return envelope
 
     def _load_record(self, idempotency_key: IdempotencyKey) -> _ArtifactRecord | None:
@@ -273,21 +311,44 @@ class FileArtifactStore:
         record = self._load_record(idempotency_key)
         return record.envelope if record is not None else None
 
+    def _index_path(self) -> Path:
+        return self._artifact_root / "_index.json"
+
+    def _remember(self, artifact_id: str, filename: str) -> None:
+        index_path = self._index_path()
+        with _exclusive_lock(index_path.with_suffix(".lock")):
+            current: dict[str, str] = {}
+            if index_path.is_file():
+                loaded = json.loads(index_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    current = {
+                        str(key): str(value)
+                        for key, value in loaded.items()
+                        if isinstance(key, str) and isinstance(value, str)
+                    }
+            current[artifact_id] = filename
+            _atomic_write(index_path, json.dumps(current, sort_keys=True).encode())
+
     def read_payload(self, envelope: ArtifactEnvelope) -> bytes:
-        if not self._artifact_root.is_dir():
+        index_path = self._index_path()
+        if not index_path.is_file():
             raise FileNotFoundError(envelope.artifact_id)
-        for path in self._artifact_root.glob("*.json"):
-            record = _ArtifactRecord.model_validate_json(path.read_bytes())
-            if record.envelope == envelope:
-                payload = base64.b64decode(record.payload_base64, validate=True)
-                _verify_content(record.envelope, payload)
-                return payload
-        raise FileNotFoundError(envelope.artifact_id)
+        loaded = json.loads(index_path.read_text(encoding="utf-8"))
+        filename = loaded.get(envelope.artifact_id) if isinstance(loaded, dict) else None
+        if not isinstance(filename, str):
+            raise FileNotFoundError(envelope.artifact_id)
+        path = _safe_path(self._artifact_root, filename)
+        record = _ArtifactRecord.model_validate_json(path.read_bytes())
+        if record.envelope != envelope:
+            raise ArtifactIntegrityError("artifact index does not match envelope")
+        payload = base64.b64decode(record.payload_base64, validate=True)
+        _verify_content(record.envelope, payload)
+        return payload
 
 
 class FileRunStateStore:
     def __init__(self, root: Path) -> None:
-        self._root = root.resolve()
+        self._root = trusted_directory(root)
         self._state_root = self._root / "run-state"
 
     def _path(self, run_id: str) -> Path:
@@ -331,6 +392,8 @@ class FileRunStateStore:
                     raise InvalidRunTransition(
                         "initial run snapshot must be pristine created state"
                     )
+            elif candidate.branches != current.branches:
+                assert_branch_commit(current, candidate)
             elif candidate.run_status is current.run_status:
                 if current.run_status in {
                     RunStatus.COMPLETED,

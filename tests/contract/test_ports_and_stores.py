@@ -21,10 +21,13 @@ from harness.core.contracts.ports import (
     RunStateStorePort,
 )
 from harness.core.contracts.state import (
+    BranchSnapshot,
+    BranchStatus,
     InvalidRunTransition,
     ReportTier,
     RunSnapshot,
     RunStatus,
+    transition_branch,
     transition_run,
 )
 from harness.core.storage.files import (
@@ -115,6 +118,9 @@ def test_file_implementations_satisfy_runtime_ports(tmp_path: Path) -> None:
         "PRN.txt",
         "COM1.log",
         "LPT1",
+        "CONIN$",
+        "CONOUT$.txt",
+        "NUL .txt",
         "trailing.",
         "trailing ",
         "dir./file.json",
@@ -124,6 +130,54 @@ def test_file_implementations_satisfy_runtime_ports(tmp_path: Path) -> None:
 def test_config_paths_reject_traversal_and_absolute_paths(tmp_path: Path, unsafe: str) -> None:
     with pytest.raises(PathBoundaryError):
         FileConfigStore(tmp_path).load(unsafe, NoOp)
+
+
+def test_unicode_filename_stays_inside_store_root(tmp_path: Path) -> None:
+    path = tmp_path / "报告.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "module_id": "memory",
+                "reason": "placeholder",
+                "capability": "none",
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = FileConfigStore(tmp_path).load("报告.json", NoOp)
+    assert loaded.capability == "none"
+
+
+def test_store_rejects_marked_reparse_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "store"
+    root.mkdir()
+    real_lstat = Path.lstat
+
+    class _Reparse:
+        st_mode = 0o040000
+        st_file_attributes = 0x400
+
+    def fake_lstat(self: Path) -> object:
+        if self == root:
+            return _Reparse()
+        return real_lstat(self)
+
+    monkeypatch.setattr(Path, "lstat", fake_lstat)
+    with pytest.raises(PathBoundaryError, match="redirected"):
+        FileConfigStore(root)
+
+
+def test_store_rejects_reparse_root(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink privilege unavailable")
+    with pytest.raises(PathBoundaryError, match="redirected"):
+        FileConfigStore(link)
 
 
 def test_config_loading_uses_strict_contract_validation(tmp_path: Path) -> None:
@@ -255,7 +309,10 @@ def test_artifact_put_is_idempotent_without_duplicate_side_effects(tmp_path: Pat
     assert first == second
     assert store.get(idem()) == first
     assert store.read_payload(first) == b"first"
-    assert len(list((tmp_path / "artifacts").glob("*.json"))) == 1
+    records = [
+        path for path in (tmp_path / "artifacts").glob("*.json") if path.name != "_index.json"
+    ]
+    assert len(records) == 1
 
 
 def test_artifact_idempotency_key_rejects_different_envelope_or_payload(
@@ -382,6 +439,65 @@ def test_run_state_store_validates_transitions_and_terminal_cannot_regress(
             current.model_copy(update={"run_status": RunStatus.PLANNING}),
             expected_revision=current.revision,
         )
+
+
+def _advance_to_running(store: FileRunStateStore) -> RunSnapshot:
+    current = store.compare_and_swap(snapshot(), expected_revision=None)
+    for target in (
+        RunStatus.PLANNING,
+        RunStatus.PLANNED,
+        RunStatus.AWAITING_C1,
+        RunStatus.PREPARING_SQL,
+        RunStatus.AWAITING_C2,
+        RunStatus.SNAPSHOTTING,
+        RunStatus.RUNNING,
+    ):
+        current = store.compare_and_swap(
+            transition_run(current, target),
+            expected_revision=current.revision,
+        )
+    return current
+
+
+def test_cas_rejects_branch_skip_addition_and_removal(tmp_path: Path) -> None:
+    store = FileRunStateStore(tmp_path)
+    running = _advance_to_running(store)
+    pending = BranchSnapshot(branch_id="branch-1", step_id="step-1", status=BranchStatus.PENDING)
+    with_branch = running.model_copy(update={"branches": [pending]})
+    committed = store.compare_and_swap(with_branch, expected_revision=running.revision)
+    assert committed.branches[0].status is BranchStatus.PENDING
+
+    skipped = committed.model_copy(
+        update={
+            "branches": [
+                BranchSnapshot(
+                    branch_id="branch-1", step_id="step-1", status=BranchStatus.COMPLETED
+                )
+            ]
+        }
+    )
+    with pytest.raises(InvalidRunTransition):
+        store.compare_and_swap(skipped, expected_revision=committed.revision)
+
+    removed = committed.model_copy(update={"branches": []})
+    with pytest.raises(InvalidRunTransition):
+        store.compare_and_swap(removed, expected_revision=committed.revision)
+
+    extra = committed.model_copy(
+        update={
+            "branches": [
+                pending,
+                BranchSnapshot(branch_id="branch-2", step_id="step-2", status=BranchStatus.RUNNING),
+            ]
+        }
+    )
+    with pytest.raises(InvalidRunTransition):
+        store.compare_and_swap(extra, expected_revision=committed.revision)
+
+    legal = transition_branch(committed, "branch-1", BranchStatus.RUNNING)
+    advanced = store.compare_and_swap(legal, expected_revision=committed.revision)
+    assert advanced.branches[0].status is BranchStatus.RUNNING
+    assert store.load("run-1") == advanced
 
 
 def test_run_ids_cannot_escape_store_root(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@
 
 > 本文件是本项目**唯一**的进度与上下文同步文档。约束见 `AGENTS.md` 守则 1。
 > 任何 agent 在「开始 / 切换 / 完成」任务时点必须更新本文件；新 agent / 新会话 / 发现本节有未读更新时，必须先读 `AGENTS.md` 守则 0 再工作，只续写、不覆盖。
-> 最后更新：2026-09-24 20:27 | 更新者：Cursor Agent
+> 最后更新：2026-09-24 23:22 | 更新者：Cursor Agent
 
 ---
 
@@ -123,6 +123,7 @@
 | 2026-09-24 17:58 | Atlas | **ADR-069**：动态目标平台、核心/可选能力、三层报告等级、readiness、候选包/C3 指纹与 Profile/Adapter 组件认证契约收口；未写 harness 代码 | ADR-069、架构 v0.5、R-97～R-102、月报 manifest、rule-packs.yaml |
 | 2026-09-24 19:02 | Atlas | **ADR-070**：S0 实现就绪校正完成；消除 manifest、DAG/审批顺序、状态暂停态、M104/M106、Eval overlay、ErrorEnvelope/E-NNNN、审批指纹与依赖方向歧义 | ADR-070、架构 v0.6、月报 manifest v1.1、Profile v0.3.0、独立三轮复核 |
 | 2026-09-24 20:29 | Cursor Agent | **G0 安全准入与 S0-01 工程基线启动**：固定版 gitleaks 对全部历史扫描 6 commits/0 findings；ADR-071 冻结公开仓库安全边界；Python 3.13.12 + uv lock + CI/PR/CODEOWNERS + 构建冒烟已落地 | ADR-071；gitleaks 8.30.1；`pyproject.toml`、`uv.lock`、`.github/`；4 项治理/包冒烟测试通过 |
+| 2026-09-24 23:22 | Cursor Agent | **S0-02 合同与存储审查缺口关闭**：分支 CAS 必须经过 `transition_branch`；Windows 设备名与重解析点根目录被拒绝；schema 收紧约束对照 Git HEAD。Python 3.13.12 下 90 passed / 1 skipped，总覆盖率 91.30%，Ruff 与 mypy 通过。GitHub PR 与分支保护仍因未认证未完成 | `harness/core/contracts/`、`harness/core/storage/files.py`、`tests/contract/` |
 
 ## 4. 进行中的任务及负责人
 
@@ -140,7 +141,7 @@
 | Harness 架构契约收口（动态平台 / 能力门禁 / 运行与审批契约） | Atlas | **已完成** 2026-09-24 18:02 | ADR-069 + 架构/规则/指标/数据源/Playbook/Eval/Profile 与机器 manifest 同步；YAML/引用/表格/补丁一致性验证通过；不写 harness 业务代码 |
 | GitHub 远端接入与 Cloud 开发准备 | Atlas | **已完成** 2026-09-24 18:36 | `master` 已推送并跟踪 `origin/master`；Cloud Agent 可从该远端分支启动 |
 | S0 开工前实现就绪复核（文档契约一致性 / 设计稳健性） | Atlas | **已完成** 2026-09-24 19:02 | ADR-070；跨 SSOT/机器契约独立三轮复核无剩余 S0 开工阻断；S0 应创建的代码/schema/echo fixture 未提前实现 |
-| Harness 产品化实施 G0/S0 | Cursor Agent | **进行中** 2026-09-24 20:27 | `feat/harness-productization` 隔离工作树；先完成安全准入、治理基线与 S0 五个切片 |
+| Harness 产品化实施 G0/S0 | Cursor Agent | **进行中** 2026-09-24 23:22 | `feat/harness-productization`；G0 本地准入与 S0-01/S0-02 合同存储已落地；GitHub 分支保护仍待认证；下一刀 S0-03 |
 
 ## 5. 待办与优先级排序
 
@@ -367,3 +368,4 @@
 | 2026-09-24 19:02 | Atlas | **S0 实现就绪复核完成**：追加 ADR-070；统一机器字段、DAG/C1/C2/快照顺序、状态暂停态、M104/M106 门禁、Eval overlay、ErrorEnvelope/E-NNNN、审批指纹、依赖与 no-op；独立终审仅剩字段别名后已修正为 `rendered_sql_hash` |
 | 2026-09-24 20:27 | Cursor Agent | 开始执行 Harness 产品化计划：创建 `feat/harness-productization` 隔离工作树；G0 先完成公开仓库边界 ADR、全历史密钥扫描、分支/CI/审查与数据安全准入，再按 S0 切片测试先行实施 |
 | 2026-09-24 20:29 | Cursor Agent | G0 本地门禁通过：gitleaks 8.30.1 扫描全部 6 个提交、555.34 KB、0 findings；`.env` 已忽略/未跟踪/历史 0 次。追加 ADR-071 与 R-103～R-105；建立 Python 3.13.12、uv 0.12.18、锁文件、最小包、CI、PR 模板、CODEOWNERS；GitHub 分支保护待首个 CI check 出现且需认证后配置 |
+| 2026-09-24 23:22 | Cursor Agent | 关闭 S0-02 剩余审查发现：分支提交走状态机、拒绝 Windows 设备名与重解析点、schema 兼容对照 HEAD。全量测试与 Ruff/mypy 通过；S0-03 尚未开始 |

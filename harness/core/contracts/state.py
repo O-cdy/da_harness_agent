@@ -285,3 +285,43 @@ def transition_branch(
         )
         run_updates["checkpoint"] = checkpoint
     return RunSnapshot.model_validate({**snapshot.model_dump(), **run_updates})
+
+
+def assert_branch_commit(current: RunSnapshot, candidate: RunSnapshot) -> None:
+    """Accept exactly one pristine branch addition or one legal branch transition."""
+    current_ids = {branch.branch_id for branch in current.branches}
+    candidate_ids = [branch.branch_id for branch in candidate.branches]
+    if any(branch_id not in candidate_ids for branch_id in current_ids):
+        raise InvalidRunTransition("branches cannot be removed")
+    current_map = {branch.branch_id: branch for branch in current.branches}
+    added = [branch for branch in candidate.branches if branch.branch_id not in current_map]
+    changed = [
+        branch
+        for branch in candidate.branches
+        if branch.branch_id in current_map and branch != current_map[branch.branch_id]
+    ]
+    if len(added) + len(changed) != 1:
+        raise InvalidRunTransition("only one branch change per commit")
+    if added:
+        branch = added[0]
+        if (
+            branch.status is not BranchStatus.PENDING
+            or branch.checkpoint is not None
+            or branch.resume_status is not None
+        ):
+            raise InvalidRunTransition("new branch must be pristine pending")
+        if current.run_status in _TERMINAL or current.run_status in _PAUSED:
+            raise InvalidRunTransition("cannot add a branch to a terminal or paused run")
+        expected = current.model_copy(update={"branches": [*current.branches, branch]})
+        if candidate.model_dump(exclude={"revision"}) != expected.model_dump(exclude={"revision"}):
+            raise InvalidRunTransition("branch addition changed unrelated run state")
+        return
+    branch = changed[0]
+    expected = transition_branch(
+        current,
+        branch.branch_id,
+        branch.status,
+        checkpoint=branch.checkpoint,
+    )
+    if candidate.model_dump(exclude={"revision"}) != expected.model_dump(exclude={"revision"}):
+        raise InvalidRunTransition("branch commit does not match transition_branch")
