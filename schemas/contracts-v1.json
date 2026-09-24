@@ -888,6 +888,54 @@
         }
       },
       "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "resume_status": {
+                "type": "null"
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "run_status": {
+                "enum": [
+                  "awaiting_alignment",
+                  "waiting_data"
+                ]
+              }
+            },
+            "required": [
+              "run_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "checkpoint": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "resume_status": {
+                "enum": [
+                  "evaluating",
+                  "planning",
+                  "preparing_sql",
+                  "rendering",
+                  "running",
+                  "sealing",
+                  "snapshotting",
+                  "validating"
+                ]
+              }
+            },
+            "required": [
+              "checkpoint",
+              "resume_status"
+            ]
+          }
+        }
+      ],
       "properties": {
         "branches": {
           "items": {

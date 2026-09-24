@@ -79,10 +79,21 @@ def test_cancel_and_revision_paths_are_explicit() -> None:
 
 @pytest.mark.parametrize("pause_status", [RunStatus.AWAITING_ALIGNMENT, RunStatus.WAITING_DATA])
 def test_pause_branches_resume_only_the_interrupted_state(pause_status: RunStatus) -> None:
-    paused = transition_run(make_snapshot(RunStatus.RUNNING), pause_status)
+    paused = transition_run(
+        make_snapshot(RunStatus.RUNNING),
+        pause_status,
+        checkpoint="checkpoint:run",
+    )
 
     assert paused.resume_status is RunStatus.RUNNING
-    assert transition_run(paused, RunStatus.RUNNING).resume_status is None
+    assert (
+        transition_run(
+            paused,
+            RunStatus.RUNNING,
+            checkpoint="checkpoint:run",
+        ).resume_status
+        is None
+    )
     with pytest.raises(InvalidRunTransition):
         transition_run(paused, RunStatus.VALIDATING)
 
@@ -111,10 +122,11 @@ def test_failed_transition_requires_and_preserves_safe_error() -> None:
     assert failed.error == error
 
 
-def test_paused_run_can_be_cancelled_or_failed() -> None:
+def test_paused_run_can_be_cancel_requested_but_not_jump_failed() -> None:
     paused = transition_run(
         make_snapshot(RunStatus.RUNNING),
         RunStatus.AWAITING_ALIGNMENT,
+        checkpoint="checkpoint:alignment",
     )
     cancelling = transition_run(paused, RunStatus.CANCEL_REQUESTED)
     assert cancelling.resume_status is None
@@ -122,6 +134,7 @@ def test_paused_run_can_be_cancelled_or_failed() -> None:
     paused_again = transition_run(
         make_snapshot(RunStatus.RUNNING),
         RunStatus.WAITING_DATA,
+        checkpoint="checkpoint:data",
     )
     error = ErrorEnvelope(
         code="E_DATA",
@@ -133,7 +146,8 @@ def test_paused_run_can_be_cancelled_or_failed() -> None:
         plan_revision=1,
         safe_message="safe",
     )
-    assert transition_run(paused_again, RunStatus.FAILED, error=error).error == error
+    with pytest.raises(InvalidRunTransition):
+        transition_run(paused_again, RunStatus.FAILED, error=error)
 
 
 def test_one_branch_can_pause_while_an_independent_branch_keeps_run_active() -> None:
@@ -330,6 +344,7 @@ def test_branch_and_run_pause_shapes_reject_inconsistent_snapshots() -> None:
             data_completeness=DataCompleteness.PARTIAL,
             report_tier=ReportTier.DRY_RUN,
             resume_status=RunStatus.RUNNING,
+            checkpoint="checkpoint:run",
             branches=[runnable],
         )
 
@@ -352,3 +367,97 @@ def test_branch_transition_rejects_unknown_missing_checkpoint_and_illegal_target
         transition_branch(run, "branch-1", BranchStatus.WAITING_DATA)
     with pytest.raises(InvalidRunTransition, match="illegal branch"):
         transition_branch(run, "branch-1", BranchStatus.COMPLETED)
+
+
+@pytest.mark.parametrize(
+    "resume_status",
+    [
+        RunStatus.CREATED,
+        RunStatus.PLANNED,
+        RunStatus.AWAITING_C1,
+        RunStatus.AWAITING_C2,
+        RunStatus.AWAITING_C3,
+        RunStatus.CANCEL_REQUESTED,
+        RunStatus.COMPLETED,
+        RunStatus.FAILED,
+        RunStatus.CANCELLED,
+        RunStatus.REVISION_REQUIRED,
+    ],
+)
+def test_run_pause_rejects_terminal_or_revision_resume_status(
+    resume_status: RunStatus,
+) -> None:
+    with pytest.raises(ValueError, match="active resume_status"):
+        RunSnapshot(
+            run_id="run-1",
+            plan_revision=1,
+            revision=0,
+            run_status=RunStatus.WAITING_DATA,
+            data_completeness=DataCompleteness.PARTIAL,
+            report_tier=ReportTier.DRY_RUN,
+            checkpoint="checkpoint:run",
+            resume_status=resume_status,
+        )
+
+
+def test_run_pause_requires_committed_checkpoint() -> None:
+    with pytest.raises(ValueError, match="checkpoint"):
+        RunSnapshot(
+            run_id="run-1",
+            plan_revision=1,
+            revision=0,
+            run_status=RunStatus.AWAITING_ALIGNMENT,
+            data_completeness=DataCompleteness.PARTIAL,
+            report_tier=ReportTier.DRY_RUN,
+            resume_status=RunStatus.RUNNING,
+        )
+
+    with pytest.raises(InvalidRunTransition, match="checkpoint"):
+        transition_run(make_snapshot(RunStatus.RUNNING), RunStatus.WAITING_DATA)
+
+
+def test_run_resume_requires_exact_checkpoint_and_cannot_jump_terminal() -> None:
+    paused = transition_run(
+        make_snapshot(RunStatus.RUNNING),
+        RunStatus.WAITING_DATA,
+        checkpoint="checkpoint:run",
+    )
+
+    with pytest.raises(InvalidRunTransition, match="checkpoint"):
+        transition_run(paused, RunStatus.RUNNING)
+    with pytest.raises(InvalidRunTransition, match="checkpoint"):
+        transition_run(paused, RunStatus.RUNNING, checkpoint="checkpoint:other")
+    for forbidden in (
+        RunStatus.COMPLETED,
+        RunStatus.CANCELLED,
+        RunStatus.REVISION_REQUIRED,
+    ):
+        with pytest.raises(InvalidRunTransition):
+            transition_run(paused, forbidden, checkpoint="checkpoint:run")
+
+    error = ErrorEnvelope(
+        code="E_RUNTIME",
+        category="runtime",
+        severity="error",
+        retryable=False,
+        module_id="executor",
+        run_id="run-1",
+        plan_revision=1,
+        safe_message="safe",
+    )
+    with pytest.raises(InvalidRunTransition):
+        transition_run(
+            paused,
+            RunStatus.FAILED,
+            checkpoint="checkpoint:run",
+            error=error,
+        )
+
+    resumed = transition_run(
+        paused,
+        RunStatus.RUNNING,
+        checkpoint="checkpoint:run",
+    )
+    assert resumed.run_status is RunStatus.RUNNING
+    assert resumed.resume_status is None
+    assert resumed.checkpoint == "checkpoint:run"

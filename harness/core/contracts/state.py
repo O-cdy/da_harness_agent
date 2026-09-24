@@ -5,7 +5,9 @@ from __future__ import annotations
 from enum import StrEnum
 from itertools import pairwise
 
-from pydantic import Field, model_validator
+from pydantic import Field, GetJsonSchemaHandler, model_validator
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 from .models import DataCompleteness, ErrorEnvelope, StrictContract
 
@@ -84,8 +86,13 @@ class RunSnapshot(StrictContract):
     @model_validator(mode="after")
     def validate_state_details(self) -> RunSnapshot:
         paused = {RunStatus.AWAITING_ALIGNMENT, RunStatus.WAITING_DATA}
-        if (self.run_status in paused) != (self.resume_status is not None):
-            raise ValueError("paused status and resume_status must appear together")
+        if self.run_status in paused:
+            if self.resume_status not in _RESUMABLE_RUN_STATUSES:
+                raise ValueError("paused run requires active resume_status")
+            if not self.checkpoint:
+                raise ValueError("paused run requires committed checkpoint")
+        elif self.resume_status is not None:
+            raise ValueError("active or terminal run cannot carry resume_status")
         if self.run_status is RunStatus.FAILED:
             if self.error is None:
                 raise ValueError("failed run requires ErrorEnvelope")
@@ -107,6 +114,33 @@ class RunSnapshot(StrictContract):
         if self.run_status in paused and any(branch.status in runnable for branch in self.branches):
             raise ValueError("paused run cannot contain runnable branch")
         return self
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        paused_values = sorted(status.value for status in _PAUSED)
+        resumable_values = sorted(status.value for status in _RESUMABLE_RUN_STATUSES)
+        schema.setdefault("allOf", []).append(
+            {
+                "if": {
+                    "properties": {"run_status": {"enum": paused_values}},
+                    "required": ["run_status"],
+                },
+                "then": {
+                    "properties": {
+                        "checkpoint": {"minLength": 1, "type": "string"},
+                        "resume_status": {"enum": resumable_values},
+                    },
+                    "required": ["checkpoint", "resume_status"],
+                },
+                "else": {"properties": {"resume_status": {"type": "null"}}},
+            }
+        )
+        return schema
 
 
 class InvalidRunTransition(ValueError):
@@ -136,6 +170,18 @@ _TRANSITIONS[RunStatus.REVISION_REQUIRED] = {RunStatus.PLANNING}
 
 _TERMINAL = {RunStatus.COMPLETED, RunStatus.CANCELLED, RunStatus.FAILED}
 _PAUSED = {RunStatus.AWAITING_ALIGNMENT, RunStatus.WAITING_DATA}
+_RESUMABLE_RUN_STATUSES = frozenset(
+    {
+        RunStatus.PLANNING,
+        RunStatus.PREPARING_SQL,
+        RunStatus.SNAPSHOTTING,
+        RunStatus.RUNNING,
+        RunStatus.VALIDATING,
+        RunStatus.RENDERING,
+        RunStatus.SEALING,
+        RunStatus.EVALUATING,
+    }
+)
 _BRANCH_PAUSED = {BranchStatus.AWAITING_ALIGNMENT, BranchStatus.WAITING_DATA}
 _BRANCH_TRANSITIONS = {
     BranchStatus.PENDING: {BranchStatus.RUNNING, BranchStatus.CANCELLED},
@@ -153,6 +199,7 @@ def transition_run(
     snapshot: RunSnapshot,
     target: RunStatus,
     *,
+    checkpoint: str | None = None,
     error: ErrorEnvelope | None = None,
 ) -> RunSnapshot:
     """Return the next immutable snapshot or reject the transition."""
@@ -161,18 +208,25 @@ def transition_run(
         raise InvalidRunTransition(f"illegal run transition: {current} -> {target}")
 
     updates: dict[str, object] = {"run_status": target, "error": error}
-    if target is RunStatus.FAILED:
+    if current in _PAUSED:
+        if target is RunStatus.CANCEL_REQUESTED:
+            updates["resume_status"] = None
+        elif target is not snapshot.resume_status or checkpoint != snapshot.checkpoint:
+            raise InvalidRunTransition("paused run must resume from its committed checkpoint")
+        else:
+            updates["resume_status"] = None
+            updates["checkpoint"] = snapshot.checkpoint
+    elif target in _PAUSED:
+        if current not in _RESUMABLE_RUN_STATUSES or not checkpoint:
+            raise InvalidRunTransition("run pause requires active state and committed checkpoint")
+        updates["resume_status"] = current
+        updates["checkpoint"] = checkpoint
+    elif target is RunStatus.FAILED:
         if error is None:
             raise InvalidRunTransition("failed transition requires ErrorEnvelope")
         updates["resume_status"] = None
     elif target is RunStatus.CANCEL_REQUESTED:
         updates["resume_status"] = None
-    elif current in _PAUSED:
-        if target is not snapshot.resume_status:
-            raise InvalidRunTransition(f"illegal run transition: {current} -> {target}")
-        updates["resume_status"] = None
-    elif target in _PAUSED:
-        updates["resume_status"] = current
     elif target not in _TRANSITIONS.get(current, set()):
         raise InvalidRunTransition(f"illegal run transition: {current} -> {target}")
 
@@ -219,6 +273,7 @@ def transition_branch(
         if snapshot.run_status in _PAUSED:
             run_updates["run_status"] = snapshot.resume_status or RunStatus.RUNNING
             run_updates["resume_status"] = None
+            run_updates["checkpoint"] = checkpoint
     elif any(branch.status in _BRANCH_PAUSED for branch in branches):
         run_updates["resume_status"] = (
             snapshot.resume_status if snapshot.run_status in _PAUSED else snapshot.run_status
@@ -228,4 +283,5 @@ def transition_branch(
             if any(branch.status is BranchStatus.AWAITING_ALIGNMENT for branch in branches)
             else RunStatus.WAITING_DATA
         )
+        run_updates["checkpoint"] = checkpoint
     return RunSnapshot.model_validate({**snapshot.model_dump(), **run_updates})

@@ -24,3 +24,10 @@ def test_generated_v1_bundle_matches_export_api() -> None:
         "QualityAssertion",
         "SourceManifest",
     } <= generated["contracts"].keys()
+
+    run_schema = generated["contracts"]["RunSnapshot"]
+    pause_condition = run_schema["allOf"][0]
+    assert set(pause_condition["then"]["required"]) >= {"checkpoint", "resume_status"}
+    assert set(pause_condition["then"]["properties"]["resume_status"]["enum"]).isdisjoint(
+        {"completed", "failed", "cancelled", "revision_required"}
+    )
