@@ -19,6 +19,9 @@ dependencies = [
   "typer>=0.16,<1",
 ]
 
+[project.scripts]
+harness = "harness.cli.app:app"
+
 [dependency-groups]
 dev = [
   "build>=1.2,<2",
@@ -82,3 +85,17 @@ name = "Core must not depend on CLI"
 type = "forbidden"
 source_modules = ["harness.core"]
 forbidden_modules = ["harness.cli"]
+
+[[tool.importlinter.contracts]]
+name = "Core must not import concrete implementations"
+type = "forbidden"
+source_modules = ["harness.core"]
+forbidden_modules = [
+  "harness.adapters",
+  "harness.metrics",
+  "harness.skills",
+  "harness.execution",
+  "harness.reporting",
+  "harness.llm",
+  "harness.cli",
+]
