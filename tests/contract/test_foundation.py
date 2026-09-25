@@ -13,6 +13,12 @@ from harness.execution.reader import (
     prove_zero_write,
     run_read_only,
 )
+from harness.execution.source_contract import (
+    catalog_sql,
+    collect_source_contract,
+    expected_from_profile,
+    write_evidence,
+)
 from harness.execution.sql_guard import guard_sql
 from harness.runtime import review_statement
 
@@ -191,6 +197,148 @@ def test_zero_write_probe_keeps_grant_text_out_of_the_result() -> None:
     assert recovered["session_blocked_write"] is True
     assert recovered["write_accepted"] is False
     assert "appdb" not in json.dumps(recovered)
+
+
+def test_source_contract_reports_catalog_gaps_without_business_rows(tmp_path: Path) -> None:
+    profile = {
+        "datasource": {
+            "facts_schema": "facts",
+            "dims_schema": "dims",
+            "platforms": {
+                "shopify": {
+                    "adapter_id": "shopify",
+                    "adapter_contract_version": "1",
+                    "whitelist": ["orders", "refunds"],
+                    "required_columns": {"orders": ["order_created_date"]},
+                }
+            },
+        }
+    }
+    opened: list[str] = []
+
+    def connect(_env: Mapping[str, str]) -> object:
+        opened.append("open")
+        raise AssertionError("connect must not run without credentials")
+
+    with pytest.raises(SqlGuardError, match="credentials"):
+        collect_source_contract({}, profile, ["shopify"], connect=connect)  # type: ignore[arg-type]
+    assert opened == []
+
+    class _Catalog:
+        def __init__(self) -> None:
+            self.sql = ""
+            self.closed = False
+
+        def execute(self, statement: str) -> list[tuple[object, ...]]:
+            self.sql = statement
+            return [("facts", "orders", "id", "bigint")]
+
+        def close(self) -> None:
+            self.closed = True
+
+    session = _Catalog()
+    login = {"MYSQL_HOST": "127.0.0.1", "MYSQL_USER": "reader", "MYSQL_PASSWORD": "placeholder"}
+    contracts = collect_source_contract(
+        login,
+        profile,
+        ["shopify"],
+        connect=lambda _env: session,
+    )
+    assert session.closed is True
+    assert "information_schema.COLUMNS" in session.sql
+    assert "FROM `orders`" not in session.sql
+    assert contracts[0]["business_rows_read"] == 0
+    assert contracts[0]["watermark"] is None
+    assert contracts[0]["row_count"] is None
+    assert contracts[0]["capability"] == {"tables": "missing"}
+    assert contracts[0]["unmapped_fields"] == ["orders.order_created_date", "refunds"]
+    assert str(contracts[0]["schema_fingerprint"]).startswith("sha256:")
+    assert "buyer@example.com" not in json.dumps(contracts)
+
+    ambiguous = _Catalog()
+    ambiguous.execute = lambda _statement: [  # type: ignore[method-assign]
+        ("facts", "orders", "id", "bigint"),
+        ("dims", "orders", "id", "bigint"),
+    ]
+    both = collect_source_contract(login, profile, ["shopify"], connect=lambda _env: ambiguous)
+    assert both[0]["unmapped_fields"][0] == "orders"
+    assert both[0]["capability"] == {"tables": "missing"}
+
+    opened.clear()
+
+    def refuse(_env: Mapping[str, str]) -> object:
+        opened.append("open")
+        raise AssertionError("empty declaration must not connect")
+
+    assert collect_source_contract(login, profile, [], connect=refuse) == []  # type: ignore[arg-type]
+    assert opened == []
+    with pytest.raises(SqlGuardError, match="identifier"):
+        catalog_sql([{"table": "orders;drop", "schemas": ["facts"]}])
+    assert "'维表'" in catalog_sql([{"table": "维表", "schemas": ["facts"]}])
+    evidence = tmp_path / "catalog"
+    write_evidence(evidence, contracts, session.sql)
+    saved = json.loads((evidence / "result.json").read_text(encoding="utf-8"))
+    assert saved[0]["business_rows_read"] == 0
+    assert saved[0]["row_count"] is None
+    assert "MYSQL_PASSWORD" not in (evidence / "source_manifest.json").read_text(encoding="utf-8")
+
+
+def test_orchestrator_keeps_injected_source_contract_read_only(tmp_path: Path) -> None:
+    seen: list[int] = []
+
+    def contract() -> list[dict[str, object]]:
+        seen.append(1)
+        return [
+            {
+                "adapter_id": "shopify",
+                "schema_fingerprint": "sha256:abc",
+                "capability": {"tables": "ready"},
+                "unmapped_fields": [],
+                "watermark": None,
+                "row_count": None,
+                "business_rows_read": 0,
+            }
+        ]
+
+    result = run_playbook(
+        ROOT,
+        "tests/fixtures/playbooks/echo.yaml",
+        ["shopify"],
+        source_contract=contract,
+        evidence_dir=tmp_path / "contract",
+    )
+    assert seen == [1]
+    assert result["source_contracts"][0]["schema_fingerprint"] == "sha256:abc"
+    assert result["source_contracts"][0]["business_rows_read"] == 0
+    with pytest.raises(OrchestratorError, match="business rows"):
+        run_playbook(
+            ROOT,
+            "tests/fixtures/playbooks/echo.yaml",
+            ["shopify"],
+            source_contract=lambda: [{"business_rows_read": 2}],
+        )
+    assert (
+        expected_from_profile(
+            {
+                "datasource": {
+                    "facts_schema": "facts",
+                    "dims_schema": "dims",
+                    "platforms": {"shopify": {"adapter_id": "shopify", "whitelist": ["orders"]}},
+                }
+            },
+            ["shopify"],
+        )[0]["table"]
+        == "orders"
+    )
+    sql = catalog_sql(
+        [
+            {
+                "table": "orders",
+                "schemas": ["facts", "dims"],
+            }
+        ]
+    )
+    assert "information_schema.COLUMNS" in sql
 
 
 def test_policy_hook_runs_before_and_blocks_network() -> None:

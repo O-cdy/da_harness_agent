@@ -2,7 +2,7 @@
 
 > 本文件是本项目**唯一**的进度与上下文同步文档。约束见 `AGENTS.md` 守则 1。
 > 任何 agent 在「开始 / 切换 / 完成」任务时点必须更新本文件；新 agent / 新会话 / 发现本节有未读更新时，必须先读 `AGENTS.md` 守则 0 再工作，只续写、不覆盖。
-> 最后更新：2026-09-25 14:35 | 更新者：Cursor Agent
+> 最后更新：2026-09-25 17:45 | 更新者：Cursor Agent
 
 ---
 
@@ -129,6 +129,7 @@
 | 2026-09-25 12:04 | Cursor Agent | **更正 01:13 的范围**：S3–S7 仍是骨架，未接到运行路径。本轮只补 S0–S2 可验证地基：状态机走到快照、记忆不带回上期数字、C2 占位不执行 SQL、缺凭据不换通路、注入会话检查只读授权、两平台合成样本带水位与内容 hash、`trace.jsonl` 只记摘要。127 passed / 1 skipped，覆盖率 98.32%。真实库零写入未跑；审批记录仍无 approver / approved_at | `tests/contract/test_foundation.py`、`harness/core/orchestrator.py`、`harness/execution/reader.py` |
 | 2026-09-25 13:56 | Cursor Agent | **S0–S2 会话零写入已证明，三层未同时成立**。本地探测业务行 0，写探测被错误号 1792 拒绝；当前登录含 ALL PRIVILEGES，故只读账号层不成立。128 passed / 1 skipped，覆盖率 97.51%。复盘只追加 `docs/reviews/phase-review.md` | `runs/2026-09-25-zero-write-probe/`、ADR-072 |
 | 2026-09-25 14:35 | Cursor Agent | **现有登录的 harness 连接固定为只读**。连接建立时设置只读会话，语句守卫拒绝改回可写。不收回账号权限。再次探测错误号 1792，业务行 0 | `harness/execution/live_probe.py`、`docs/reviews/phase-review.md` |
+| 2026-09-25 17:45 | Cursor Agent | **S1 源契约预检**：编排器只接收注入的目录契约，核心不连库。本地只查 information_schema，两个适配器表能力均为 ready，未映射数 0，水位与行数为空，业务行 0。130 passed / 1 skipped，覆盖率 95.72%。B-15 与空批准记录仍开 | `harness/execution/source_contract.py`、`docs/reviews/phase-review.md` |
 
 ## 4. 进行中的任务及负责人
 
@@ -149,6 +150,7 @@
 | Harness 产品化实施 G0/S0–S7 | Cursor Agent | **本地切片已落地** 2026-09-25 01:13 | `feat/harness-productization`：`0687a0f` 控制面，`0f30f98` 编排器至报告/模型口，`cba57d1` Semgrep pin。真实库零写入未跑 |
 | GitHub PR 与 master 保护 | Cursor Agent | **已完成** 2026-09-25 10:14 | PR https://github.com/O-cdy/da_harness_agent/pull/1 。`master` 必须经 PR 合并，必需检查为 Python 3.13 ubuntu/windows、Security gates、Secret scan、Semgrep，禁止 force-push，管理员不可绕过。CI run 36085282875 五门全绿。未合并 |
 | S0–S2 地基补实 | Cursor Agent | **会话层已收口** 2026-09-25 13:56 | AST 与只读会话已在真实库证明写入被拒绝。只读账号与审批人仍开，见 B-15 与 `docs/reviews/phase-review.md` |
+| S1 源契约预检 | Cursor Agent | **已完成** 2026-09-25 17:45 | 目录契约进入编排器。本地证据在 `runs/2026-09-25-source-contract/`（不入库）。未执行原料 SQL，未造批准人 |
 
 ## 5. 待办与优先级排序
 
@@ -171,9 +173,11 @@
 | **P1** | **S0–S2 会话层已收口**：状态机、记忆门禁、C2 前不执行、AST 与只读会话拒绝写入 | Cursor Agent | 2026-09-25 13:56。128 passed / 1 skipped，覆盖率 97.51%。复盘见 `docs/reviews/phase-review.md` |
 | **P1** | 当前登录不是只读账号（含 ALL PRIVILEGES）。R-104 三层尚未同时成立 | Cursor Agent | B-15。不在未授权时创建数据库用户 |
 | **P1** | 审批记录仍是占位指纹，没有 approver / approved_at。C2 占位不能当批准 | Cursor Agent | 架构 §16.4。本轮只堵住未批准执行 |
-| **P1** | S3–S7 骨架：指标、Skill、封包、大纲渲染、无密钥 ask。未接编排器，未出月报 | Cursor Agent | 见 `0f30f98`。平台适配器认证要等只读账号 |
+| **P1** | **S1 源契约预检已完成**：只查 information_schema。未映射数 0，水位与行数为空，业务行 0 | Cursor Agent | 2026-09-25 17:45。130 passed / 1 skipped，覆盖率 95.72%。复盘见 `docs/reviews/phase-review.md` |
+| **P1** | 人工 C2：对某一版已归档 SQL 指纹明确批准后，才允许只读会话执行该语句 | 用户 | 本轮没有 approver / approved_at。B-15 继续打开 |
+| **P1** | S3–S7 骨架：指标、Skill、封包、大纲渲染、无密钥 ask。未接编排器，未出月报 | Cursor Agent | 见 `0f30f98`。上一门没有业务快照证据，这些门不开工 |
 | **P1** | 能力层：MCP/Web/Schedule/Session/向量只返回 NoOp，不建存储后端 | Cursor Agent | `harness/core/noop.py`；启用须另立 ADR |
-| **P1** | 接真实库（只读）认证 Shopify/TikTok adapter，并按显式 `target_platforms` 跑通月报。Affiliate/LIVE 不进 canonical 合计 | Cursor Agent | 会话零写入已证明；只读账号未到位，适配器认证未开始 |
+| **P1** | 业务快照：只取已批准语句的聚合或水位。合成样本仍不是真实快照 | Cursor Agent | 目录预检已完成；原料 SQL 未执行。B-15 仍开 |
 | **P1** | Reporter：Markdown 与 HTML 按 `plan.outline` 渲染 | Cursor Agent | 本地渲染已在 `0f30f98`；未对真实月报跑出报告 |
 | **P1** | 新老客分层（M501–M507）接入月报 | Atlas | S4 |
 | P2 | 大促日历（`promo_calendar.events`）—— 用户 2026-09-22 确认**暂不提供**；`enabled=false`，`missing_behavior=annotate_not_block`（ADR-054 / R-70）。补日历后打开 `enabled` | 用户 | 需要时再补 |
@@ -389,3 +393,4 @@
 | 2026-09-25 13:01 | Cursor Agent | 开始 S0–S2 收尾：追加守则 0.6（ADR-072），本地证明真实库零写入，复盘并入单份报告 |
 | 2026-09-25 13:56 | Cursor Agent | 会话零写入已证明（错误号 1792，业务行 0）；只读账号层不成立，记为 B-15。删除两份 workbuddy 旧稿和退出复盘 canvas。128 passed / 1 skipped，覆盖率 97.51% |
 | 2026-09-25 14:35 | Cursor Agent | 用现有登录把 harness 连接固定为只读会话，并拒绝把会话改回可写。不收回账号权限，不打开全局只读。再次探测错误号 1792，业务行 0 |
+| 2026-09-25 17:45 | Cursor Agent | S1 源契约预检：目录查询进入编排器，核心不连库。本地探测业务行 0，未映射数 0。130 passed / 1 skipped，覆盖率 95.72%。B-15 与空批准记录仍开 |

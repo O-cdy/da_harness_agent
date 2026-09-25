@@ -80,6 +80,7 @@ def run_playbook(
     statements: list[str] | None = None,
     review_sql: SqlReview | None = None,
     execute_sql: SqlExecute | None = None,
+    source_contract: Callable[[], list[dict[str, Any]]] | None = None,
     c2_approved: bool = False,
     previous_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -101,6 +102,7 @@ def run_playbook(
             partial.write_text("partial", encoding="utf-8")
         if fail_closed:
             raise OrchestratorError("run cancelled")
+        contracts = _source_contracts(source_contract)
         snapshot = _start(manifest)
         for status in _MAINLINE:
             snapshot = transition_run(snapshot, status)
@@ -120,6 +122,7 @@ def run_playbook(
             "materialized": materialized,
             "memory": memory,
             "sql_archive": sql_archive,
+            "source_contracts": contracts,
             "approvals": approvals,
             "branches": _public_branches(snapshot),
             "approval_fingerprint": approvals["c1"]["fingerprint"],
@@ -131,6 +134,21 @@ def run_playbook(
     except Exception:
         _cleanup(partial)
         raise
+
+
+def _source_contracts(
+    source_contract: Callable[[], list[dict[str, Any]]] | None,
+) -> list[dict[str, Any]]:
+    """Attach an injected catalog contract. Business rows are rejected."""
+    if source_contract is None:
+        return [{"business_rows_read": 0, "reason": "source contract is absent"}]
+    contracts = source_contract()
+    checked: list[dict[str, Any]] = []
+    for item in contracts:
+        if item.get("business_rows_read") not in (0, None):
+            raise OrchestratorError("source contract read business rows")
+        checked.append({**item, "business_rows_read": 0})
+    return checked
 
 
 def _caliber_paths(root: Path) -> list[Path]:

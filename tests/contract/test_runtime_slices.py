@@ -52,6 +52,9 @@ def test_echo_branches_pause_resume_and_cancel(tmp_path: Path) -> None:
         resume("sha256:abc", "completed")
     assert result["phase_order"] == ["preflight", "plan", "sql", "snapshot"]
     assert result["sql_archive"] == [{"executed": False, "reason": "run has no statement"}]
+    assert result["source_contracts"] == [
+        {"business_rows_read": 0, "reason": "source contract is absent"}
+    ]
     assert result["approvals"]["c3"]["status"] == "not_submitted"
     for name in ("plan.md", "trace.jsonl", "envelope.json", "checkpoint.json"):
         assert (tmp_path / "evidence" / name).is_file()
