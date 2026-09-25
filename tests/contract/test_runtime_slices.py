@@ -47,12 +47,36 @@ def test_echo_branches_pause_resume_and_cancel(tmp_path: Path) -> None:
     assert "report_tier" not in statuses["align"]
     assert statuses["continue"]["report_tier"] == "dry_run"
     assert statuses["align"]["checkpoint"] != statuses["continue"]["checkpoint"]
-    assert resume(statuses["align"]["checkpoint"]) == "active"
+    assert resume(str(statuses["align"]["checkpoint"]), "snapshotting") == "snapshotting"
+    with pytest.raises(OrchestratorError, match="active"):
+        resume("sha256:abc", "completed")
     assert result["phase_order"] == ["preflight", "plan", "sql", "snapshot"]
-    for name in ("plan.md", "trace.json", "envelope.json", "checkpoint.json"):
+    assert result["sql_archive"] == [{"executed": False, "reason": "run has no statement"}]
+    assert result["approvals"]["c3"]["status"] == "not_submitted"
+    for name in ("plan.md", "trace.jsonl", "envelope.json", "checkpoint.json"):
         assert (tmp_path / "evidence" / name).is_file()
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "evidence" / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    required = {
+        "schema_version",
+        "event_id",
+        "event_type",
+        "run_id",
+        "plan_revision",
+        "step_id",
+        "timestamp",
+        "input_refs",
+        "result_summary",
+        "duration_ms",
+        "classification",
+    }
+    assert events and required <= events[0].keys()
+    assert {event["event_type"] for event in events} >= {"state", "policy", "approval", "artifact"}
+    assert all("SELECT" not in str(event["result_summary"]) for event in events)
     with pytest.raises(OrchestratorError, match="checkpoint"):
-        resume(None)
+        resume(None, "snapshotting")
     with pytest.raises(OrchestratorError, match="cancelled"):
         run_playbook(
             ROOT,
@@ -151,6 +175,19 @@ def test_adapters_reject_missing_credentials_and_hostile_files(tmp_path: Path) -
     right = canonical_snapshot("tiktok", [_row("b")])
     assert left["adapter_id"] != right["adapter_id"]
     assert left["row_count"] == 1
+    for sample in (left, right):
+        assert str(sample["schema_fingerprint"]).startswith("sha256:")
+        assert str(sample["content_hash"]).startswith("sha256:")
+        assert sample["watermark"] == "2026-01-01"
+        assert sample["capability"] == {"orders": "ready"}
+    assert left["unmapped_fields"] == ["a"]
+    leaked = canonical_snapshot(
+        "shopify",
+        [{**_row("c"), "email": "buyer@example.com", "phone": "555"}],
+    )
+    encoded = json.dumps(leaked)
+    assert "buyer@example.com" not in encoded
+    assert "phone" not in encoded
     source = tmp_path / "input"
     source.mkdir()
     table = source / "facts.csv"

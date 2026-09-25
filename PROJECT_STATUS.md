@@ -2,7 +2,7 @@
 
 > 本文件是本项目**唯一**的进度与上下文同步文档。约束见 `AGENTS.md` 守则 1。
 > 任何 agent 在「开始 / 切换 / 完成」任务时点必须更新本文件；新 agent / 新会话 / 发现本节有未读更新时，必须先读 `AGENTS.md` 守则 0 再工作，只续写、不覆盖。
-> 最后更新：2026-09-25 10:14 | 更新者：Cursor Agent
+> 最后更新：2026-09-25 12:04 | 更新者：Cursor Agent
 
 ---
 
@@ -126,6 +126,7 @@
 | 2026-09-24 23:22 | Cursor Agent | **S0-02 合同与存储审查缺口关闭**：分支 CAS 必须经过 `transition_branch`；Windows 设备名与重解析点根目录被拒绝；schema 收紧约束对照 Git HEAD。Python 3.13.12 下 90 passed / 1 skipped，总覆盖率 91.30%，Ruff 与 mypy 通过。GitHub PR 与分支保护仍因未认证未完成 | `harness/core/contracts/`、`harness/core/storage/files.py`、`tests/contract/` |
 | 2026-09-25 00:45 | Cursor Agent | **S0-02 准出补齐**：schema 发布基线改为 `origin/master`；`schema.py` 分支覆盖 98%，`files.py` 100%；去掉尚不存在的 CLI 入口。全量 101 passed / 1 skipped，总覆盖率 97.81% | `harness/core/contracts/schema.py`、`pyproject.toml`、`tests/contract/` |
 | 2026-09-25 01:13 | Cursor Agent | **S0-03 至 S7 本地切片落地**：控制面、编排器、CLI、合成适配、SQL 守卫、指标、Skill、封包报告与无密钥模型口均有测试。119 passed / 1 skipped，总覆盖率 98.42%。真实库零写入与 GitHub PR 未验证 | `0687a0f`、`0f30f98`、`cba57d1` |
+| 2026-09-25 12:04 | Cursor Agent | **更正 01:13 的范围**：S3–S7 仍是骨架，未接到运行路径。本轮只补 S0–S2 可验证地基：状态机走到快照、记忆不带回上期数字、C2 占位不执行 SQL、缺凭据不换通路、注入会话检查只读授权、两平台合成样本带水位与内容 hash、`trace.jsonl` 只记摘要。127 passed / 1 skipped，覆盖率 98.32%。真实库零写入未跑；审批记录仍无 approver / approved_at | `tests/contract/test_foundation.py`、`harness/core/orchestrator.py`、`harness/execution/reader.py` |
 
 ## 4. 进行中的任务及负责人
 
@@ -145,6 +146,7 @@
 | S0 开工前实现就绪复核（文档契约一致性 / 设计稳健性） | Atlas | **已完成** 2026-09-24 19:02 | ADR-070；跨 SSOT/机器契约独立三轮复核无剩余 S0 开工阻断；S0 应创建的代码/schema/echo fixture 未提前实现 |
 | Harness 产品化实施 G0/S0–S7 | Cursor Agent | **本地切片已落地** 2026-09-25 01:13 | `feat/harness-productization`：`0687a0f` 控制面，`0f30f98` 编排器至报告/模型口，`cba57d1` Semgrep pin。真实库零写入未跑 |
 | GitHub PR 与 master 保护 | Cursor Agent | **已完成** 2026-09-25 10:14 | PR https://github.com/O-cdy/da_harness_agent/pull/1 。`master` 必须经 PR 合并，必需检查为 Python 3.13 ubuntu/windows、Security gates、Secret scan、Semgrep，禁止 force-push，管理员不可绕过。CI run 36085282875 五门全绿。未合并 |
+| S0–S2 地基补实 | Cursor Agent | **可验证部分已完成** 2026-09-25 12:04 | 状态机、记忆门禁、C2 前不执行、缺凭据失败、注入只读会话与 `trace.jsonl` 已有测试。未连生产库。完整审批记录与真实库零写入仍开 |
 
 ## 5. 待办与优先级排序
 
@@ -164,8 +166,9 @@
 
 | 优先级 | 待办 | 负责人 | 依赖 |
 |---|---|---|---|
-| **P1** | **S0 骨架**：typed Port、Registry/Policy/Memory、Orchestrator、CLI `run`/`ask`/`playbooks`、echo fixture 与禁用口 | Cursor Agent | 本地已落地于 `0687a0f`、`0f30f98`。GitHub 保护仍未配置 |
-| **P1** | S1–S7 本地切片：合成 PlatformAdapter、SQL 守卫、M101–M106/M207、SK-01/02/03/08、封包校验、按 outline 出报告、无密钥 `ask` | Cursor Agent | 见 `0f30f98`。真实库只读零写入**未验证** |
+| **P1** | **S0–S2 可验证地基**已补：状态机、记忆门禁、C2 前不执行、缺凭据不换通路、`trace.jsonl` 摘要 | Cursor Agent | 2026-09-25 12:04，127 passed / 1 skipped，覆盖率 98.32%。GitHub 保护已在 PR #1 生效 |
+| **P1** | 审批记录仍是占位指纹，没有 approver / approved_at。C2 占位不能当批准 | Cursor Agent | 架构 §16.4。本轮只堵住未批准执行 |
+| **P1** | S3–S7 骨架：指标、Skill、封包、大纲渲染、无密钥 ask。未接编排器，未出月报 | Cursor Agent | 见 `0f30f98`。真实库只读零写入**未验证** |
 | **P1** | 能力层：MCP/Web/Schedule/Session/向量只返回 NoOp，不建存储后端 | Cursor Agent | `harness/core/noop.py`；启用须另立 ADR |
 | **P1** | 接真实库（只读）认证 Shopify/TikTok adapter，并按显式 `target_platforms` 跑通月报。Affiliate/LIVE 不进 canonical 合计 | Cursor Agent | 缺本次只读会话，尚未证明零写入 |
 | **P1** | Reporter：Markdown 与 HTML 按 `plan.outline` 渲染 | Cursor Agent | 本地渲染已在 `0f30f98`；未对真实月报跑出报告 |
@@ -375,4 +378,6 @@
 | 2026-09-25 00:45 | Cursor Agent | S0-02 准出补齐：发布 schema 对照 origin/master，边界覆盖率达标，移除不存在的 CLI 入口，更正第 5 节过期表述 |
 | 2026-09-25 01:13 | Cursor Agent | 本地落地 S0-03 至 S7：`0687a0f`、`0f30f98`、`cba57d1`。119 passed / 1 skipped，覆盖率 98.42%。守则 9 清单：无第二份进度文档，未删文件；真实库零写入与 GitHub PR/分支保护未验证，故不关闭这两项 |
 | 2026-09-25 10:09 | Cursor Agent | 推送 `feat/harness-productization` 并打开 PR #1。`master` 保护：必须经 PR、必需检查为 Python 3.13 ubuntu/windows、Security gates、Secret scan、Semgrep，禁止 force-push，管理员不可绕过。未合并。Bandit 的 assert 与 git 调用已改为显式校验 |
-| 2026-09-25 10:14 | Cursor Agent | PR #1 的 CI run 36085282875 五门全绿（含 Semgrep 与 Security gates）。保护规则已生效，未合并 |
+| 2026-09-25 10:14 | Cursor Agent | `37ee784` 的 CI run 36085282875 五门全绿（含 Semgrep 与 Security gates）。`master` 保护已生效，PR #1 未合并 |
+| 2026-09-25 11:20 | Cursor Agent | 开始 S0–S2 地基补实：不扩展 S3–S7，不连接生产库 |
+| 2026-09-25 12:04 | Cursor Agent | S0–S2 可验证地基补完并更正 01:13 的完成范围。真实库零写入与完整审批记录仍开。127 passed / 1 skipped，覆盖率 98.32% |

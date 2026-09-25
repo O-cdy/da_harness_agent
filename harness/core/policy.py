@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
+
+_ResultT = TypeVar("_ResultT")
 
 _SCOPE_RANK = {"all": 0, "domain": 1, "platform": 2, "playbook": 3}
 
@@ -43,3 +46,11 @@ class Policy:
         if capability and capability not in self._allowlist and event.get("enforce_capability"):
             raise PolicyError("capability is not allowlisted")
         return "allow"
+
+    def around(self, event: dict[str, Any], action: Callable[[], _ResultT]) -> _ResultT:
+        """Check the same event before and after the action."""
+        self.check({**event, "hook": "before"})
+        try:
+            return action()
+        finally:
+            self.check({**event, "hook": "after"})
