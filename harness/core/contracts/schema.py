@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -263,7 +263,7 @@ def git_published_bundle(path: Path, ref: str = PUBLISHED_SCHEMA_REF) -> dict[st
     if git is None:
         return None
     try:
-        repository = subprocess.run(  # noqa: S603
+        repository = subprocess.run(  # noqa: S603  # nosec B603
             [git, "rev-parse", "--show-toplevel"],
             cwd=path.parent,
             capture_output=True,
@@ -278,7 +278,7 @@ def git_published_bundle(path: Path, ref: str = PUBLISHED_SCHEMA_REF) -> dict[st
             return None
         if not ref or ref.startswith("-") or ":" in ref:
             return None
-        show = subprocess.run(  # noqa: S603
+        show = subprocess.run(  # noqa: S603  # nosec B603
             [git, "show", f"{ref}:{relative}"],
             cwd=root,
             capture_output=True,

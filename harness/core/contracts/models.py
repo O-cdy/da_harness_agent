@@ -275,11 +275,13 @@ class SourceManifestEntry(StrictContract):
                 assertion.passed for assertion in self.quality_assertions
             ):
                 raise ValueError("formal readiness requires passing quality assertions")
-            assert self.report_cutoff is not None
-            assert self.latency_window_seconds is not None
-            assert self.watermark is not None
-            ready_at = self.report_cutoff + timedelta(seconds=self.latency_window_seconds)
-            if self.watermark < ready_at:
+            cutoff = self.report_cutoff
+            latency = self.latency_window_seconds
+            watermark = self.watermark
+            if cutoff is None or latency is None or watermark is None:
+                raise ValueError("formal readiness requires complete timing evidence")
+            ready_at = cutoff + timedelta(seconds=latency)
+            if watermark < ready_at:
                 raise ValueError("formal readiness watermark precedes latency window")
         return self
 

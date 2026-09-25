@@ -2,7 +2,7 @@
 
 > 本文件是本项目**唯一**的进度与上下文同步文档。约束见 `AGENTS.md` 守则 1。
 > 任何 agent 在「开始 / 切换 / 完成」任务时点必须更新本文件；新 agent / 新会话 / 发现本节有未读更新时，必须先读 `AGENTS.md` 守则 0 再工作，只续写、不覆盖。
-> 最后更新：2026-09-25 01:13 | 更新者：Cursor Agent
+> 最后更新：2026-09-25 10:09 | 更新者：Cursor Agent
 
 ---
 
@@ -144,7 +144,7 @@
 | GitHub 远端接入与 Cloud 开发准备 | Atlas | **已完成** 2026-09-24 18:36 | `master` 已推送并跟踪 `origin/master`；Cloud Agent 可从该远端分支启动 |
 | S0 开工前实现就绪复核（文档契约一致性 / 设计稳健性） | Atlas | **已完成** 2026-09-24 19:02 | ADR-070；跨 SSOT/机器契约独立三轮复核无剩余 S0 开工阻断；S0 应创建的代码/schema/echo fixture 未提前实现 |
 | Harness 产品化实施 G0/S0–S7 | Cursor Agent | **本地切片已落地** 2026-09-25 01:13 | `feat/harness-productization`：`0687a0f` 控制面，`0f30f98` 编排器至报告/模型口，`cba57d1` Semgrep pin。真实库零写入未跑 |
-| GitHub PR 与 master 保护 | 用户登录后由 Cursor Agent 执行 | **未开始** 2026-09-25 01:13 | 本机无 `gh`。保护规则生效前不合并 |
+| GitHub PR 与 master 保护 | Cursor Agent | **进行中** 2026-09-25 10:09 | PR https://github.com/O-cdy/da_harness_agent/pull/1 。`master` 已要求经 PR 合并、5 个必需检查、禁止 force-push，且管理员不可绕过。首次 CI 的 Security gates 因 Bandit 失败，修复随本轮提交 |
 
 ## 5. 待办与优先级排序
 
@@ -374,3 +374,4 @@
 | 2026-09-24 23:22 | Cursor Agent | 关闭 S0-02 剩余审查发现：分支提交走状态机、拒绝 Windows 设备名与重解析点、schema 兼容对照 HEAD。全量测试与 Ruff/mypy 通过；S0-03 尚未开始 |
 | 2026-09-25 00:45 | Cursor Agent | S0-02 准出补齐：发布 schema 对照 origin/master，边界覆盖率达标，移除不存在的 CLI 入口，更正第 5 节过期表述 |
 | 2026-09-25 01:13 | Cursor Agent | 本地落地 S0-03 至 S7：`0687a0f`、`0f30f98`、`cba57d1`。119 passed / 1 skipped，覆盖率 98.42%。守则 9 清单：无第二份进度文档，未删文件；真实库零写入与 GitHub PR/分支保护未验证，故不关闭这两项 |
+| 2026-09-25 10:09 | Cursor Agent | 推送 `feat/harness-productization` 并打开 PR #1。`master` 保护：必须经 PR、必需检查为 Python 3.13 ubuntu/windows、Security gates、Secret scan、Semgrep，禁止 force-push，管理员不可绕过。未合并。Bandit 的 assert 与 git 调用已改为显式校验 |
