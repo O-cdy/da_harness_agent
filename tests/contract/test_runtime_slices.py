@@ -225,6 +225,12 @@ def test_sql_guard_blocks_writes_and_hashes_bindings() -> None:
     assert all("hash" in item for item in bindings)
     with pytest.raises(SqlGuardError, match="write"):
         guard_sql("DELETE FROM orders", playbook=False, allowed_objects=allowed)
+    with pytest.raises(SqlGuardError, match="write"):
+        guard_sql(
+            "SET SESSION TRANSACTION READ WRITE",
+            playbook=False,
+            allowed_objects=allowed,
+        )
     with pytest.raises(SqlGuardError, match="one statement"):
         guard_sql(
             "SELECT 1 FROM orders LIMIT 1; SELECT 2 FROM orders LIMIT 1",

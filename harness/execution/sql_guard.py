@@ -8,7 +8,17 @@ from collections.abc import Mapping
 import sqlglot
 from sqlglot import exp
 
-_WRITE = (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create, exp.Alter, exp.Command)
+_WRITE = (
+    exp.Insert,
+    exp.Update,
+    exp.Delete,
+    exp.Drop,
+    exp.Create,
+    exp.Alter,
+    exp.Command,
+    exp.Set,
+    exp.Transaction,
+)
 _SESSION = ("SET SESSION TRANSACTION READ ONLY",)
 
 

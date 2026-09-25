@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from harness.execution.reader import QuerySession, prove_zero_write
-from harness.execution.sql_guard import SqlGuardError
+from harness.execution.sql_guard import SqlGuardError, session_preamble
 
 
 class _Connection:
@@ -47,6 +47,7 @@ def connect_mysql(env: Mapping[str, str]) -> QuerySession:
         read_timeout=15,
         write_timeout=15,
         charset="utf8mb4",
+        init_command=session_preamble()[0],
     )
     return _Connection(raw)
 
