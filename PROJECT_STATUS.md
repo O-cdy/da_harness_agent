@@ -2,7 +2,7 @@
 
 > 本文件是本项目**唯一**的进度与上下文同步文档。约束见 `AGENTS.md` 守则 1。
 > 任何 agent 在「开始 / 切换 / 完成」任务时点必须更新本文件；新 agent / 新会话 / 发现本节有未读更新时，必须先读 `AGENTS.md` 守则 0 再工作，只续写、不覆盖。
-> 最后更新：2026-09-24 19:02 | 更新者：Atlas
+> 最后更新：2026-09-25 17:45 | 更新者：Cursor Agent
 
 ---
 
@@ -30,7 +30,7 @@
 2. **可复现三要素** —— 数据快照 hash + 代码留档 + 参数与模型版本，缺一不出报告。
 3. **单源事实** —— 事实只在 `docs/`；本文件只写状态与链接，不复制正文。
 
-硬规则 R-01~R-42 + **R-49～R-102** 见 `docs/30-constraints/rules.md`；指标采用 canonical/platform-native/provisional/diagnostic 四态，口径见 `docs/20-domain/metrics.md`；动态平台、能力门禁、三维运行状态、不可变候选包、组件认证与 S0 实现表达见 `docs/10-architecture.md`（ADR-066～070）。记忆层为口径/错误/证据包三类文件源。剧本登记及机器 manifest 见 `docs/20-domain/playbooks/index.md`；能力契约 SK-01~08 见 `docs/20-domain/skills/index.md`；字段实测见 `docs/20-domain/data-audit.md`。核心宪法见 `AGENTS.md` 守则 0。ADR-029 不生效；ADR-030 原清单已收口。
+硬规则 R-01~R-42 + **R-49～R-105** 见 `docs/30-constraints/rules.md`；指标采用 canonical/platform-native/provisional/diagnostic 四态，口径见 `docs/20-domain/metrics.md`；动态平台、能力门禁、三维运行状态、不可变候选包、组件认证与 S0 实现表达见 `docs/10-architecture.md`（ADR-066～072）。记忆层为口径/错误/证据包三类文件源。剧本登记及机器 manifest 见 `docs/20-domain/playbooks/index.md`；能力契约 SK-01~08 见 `docs/20-domain/skills/index.md`；字段实测见 `docs/20-domain/data-audit.md`。核心宪法见 `AGENTS.md` 守则 0。阶段复盘只追加在 `docs/reviews/phase-review.md`。ADR-029 不生效；ADR-030 原清单已收口。
 
 ## 3. 已完成的关键进展（含日期）
 
@@ -122,6 +122,14 @@
 | 2026-09-24 16:54 | Atlas | **ADR-068**：跨平台 canonical 内核 + TikTok 首阶段真实接入；规则/指标/评估解耦，生产运行契约补齐；未写 harness 代码 | ADR-068、架构 §14～17、R-83～R-96、TikTok 七表实测 |
 | 2026-09-24 17:58 | Atlas | **ADR-069**：动态目标平台、核心/可选能力、三层报告等级、readiness、候选包/C3 指纹与 Profile/Adapter 组件认证契约收口；未写 harness 代码 | ADR-069、架构 v0.5、R-97～R-102、月报 manifest、rule-packs.yaml |
 | 2026-09-24 19:02 | Atlas | **ADR-070**：S0 实现就绪校正完成；消除 manifest、DAG/审批顺序、状态暂停态、M104/M106、Eval overlay、ErrorEnvelope/E-NNNN、审批指纹与依赖方向歧义 | ADR-070、架构 v0.6、月报 manifest v1.1、Profile v0.3.0、独立三轮复核 |
+| 2026-09-24 20:29 | Cursor Agent | **G0 安全准入与 S0-01 工程基线启动**：固定版 gitleaks 对全部历史扫描 6 commits/0 findings；ADR-071 冻结公开仓库安全边界；Python 3.13.12 + uv lock + CI/PR/CODEOWNERS + 构建冒烟已落地 | ADR-071；gitleaks 8.30.1；`pyproject.toml`、`uv.lock`、`.github/`；4 项治理/包冒烟测试通过 |
+| 2026-09-24 23:22 | Cursor Agent | **S0-02 合同与存储审查缺口关闭**：分支 CAS 必须经过 `transition_branch`；Windows 设备名与重解析点根目录被拒绝；schema 收紧约束对照 Git HEAD。Python 3.13.12 下 90 passed / 1 skipped，总覆盖率 91.30%，Ruff 与 mypy 通过。GitHub PR 与分支保护仍因未认证未完成 | `harness/core/contracts/`、`harness/core/storage/files.py`、`tests/contract/` |
+| 2026-09-25 00:45 | Cursor Agent | **S0-02 准出补齐**：schema 发布基线改为 `origin/master`；`schema.py` 分支覆盖 98%，`files.py` 100%；去掉尚不存在的 CLI 入口。全量 101 passed / 1 skipped，总覆盖率 97.81% | `harness/core/contracts/schema.py`、`pyproject.toml`、`tests/contract/` |
+| 2026-09-25 01:13 | Cursor Agent | **S0-03 至 S7 本地切片落地**：控制面、编排器、CLI、合成适配、SQL 守卫、指标、Skill、封包报告与无密钥模型口均有测试。119 passed / 1 skipped，总覆盖率 98.42%。真实库零写入与 GitHub PR 未验证 | `0687a0f`、`0f30f98`、`cba57d1` |
+| 2026-09-25 12:04 | Cursor Agent | **更正 01:13 的范围**：S3–S7 仍是骨架，未接到运行路径。本轮只补 S0–S2 可验证地基：状态机走到快照、记忆不带回上期数字、C2 占位不执行 SQL、缺凭据不换通路、注入会话检查只读授权、两平台合成样本带水位与内容 hash、`trace.jsonl` 只记摘要。127 passed / 1 skipped，覆盖率 98.32%。真实库零写入未跑；审批记录仍无 approver / approved_at | `tests/contract/test_foundation.py`、`harness/core/orchestrator.py`、`harness/execution/reader.py` |
+| 2026-09-25 13:56 | Cursor Agent | **S0–S2 会话零写入已证明，三层未同时成立**。本地探测业务行 0，写探测被错误号 1792 拒绝；当前登录含 ALL PRIVILEGES，故只读账号层不成立。128 passed / 1 skipped，覆盖率 97.51%。复盘只追加 `docs/reviews/phase-review.md` | `runs/2026-09-25-zero-write-probe/`、ADR-072 |
+| 2026-09-25 14:35 | Cursor Agent | **现有登录的 harness 连接固定为只读**。连接建立时设置只读会话，语句守卫拒绝改回可写。不收回账号权限。再次探测错误号 1792，业务行 0 | `harness/execution/live_probe.py`、`docs/reviews/phase-review.md` |
+| 2026-09-25 17:45 | Cursor Agent | **S1 源契约预检**：编排器只接收注入的目录契约，核心不连库。本地只查 information_schema，两个适配器表能力均为 ready，未映射数 0，水位与行数为空，业务行 0。130 passed / 1 skipped，覆盖率 95.72%。B-15 与空批准记录仍开 | `harness/execution/source_contract.py`、`docs/reviews/phase-review.md` |
 
 ## 4. 进行中的任务及负责人
 
@@ -139,6 +147,10 @@
 | Harness 架构契约收口（动态平台 / 能力门禁 / 运行与审批契约） | Atlas | **已完成** 2026-09-24 18:02 | ADR-069 + 架构/规则/指标/数据源/Playbook/Eval/Profile 与机器 manifest 同步；YAML/引用/表格/补丁一致性验证通过；不写 harness 业务代码 |
 | GitHub 远端接入与 Cloud 开发准备 | Atlas | **已完成** 2026-09-24 18:36 | `master` 已推送并跟踪 `origin/master`；Cloud Agent 可从该远端分支启动 |
 | S0 开工前实现就绪复核（文档契约一致性 / 设计稳健性） | Atlas | **已完成** 2026-09-24 19:02 | ADR-070；跨 SSOT/机器契约独立三轮复核无剩余 S0 开工阻断；S0 应创建的代码/schema/echo fixture 未提前实现 |
+| Harness 产品化实施 G0/S0–S7 | Cursor Agent | **本地切片已落地** 2026-09-25 01:13 | `feat/harness-productization`：`0687a0f` 控制面，`0f30f98` 编排器至报告/模型口，`cba57d1` Semgrep pin。真实库零写入未跑 |
+| GitHub PR 与 master 保护 | Cursor Agent | **已完成** 2026-09-25 10:14 | PR https://github.com/O-cdy/da_harness_agent/pull/1 。`master` 必须经 PR 合并，必需检查为 Python 3.13 ubuntu/windows、Security gates、Secret scan、Semgrep，禁止 force-push，管理员不可绕过。CI run 36085282875 五门全绿。未合并 |
+| S0–S2 地基补实 | Cursor Agent | **会话层已收口** 2026-09-25 13:56 | AST 与只读会话已在真实库证明写入被拒绝。只读账号与审批人仍开，见 B-15 与 `docs/reviews/phase-review.md` |
+| S1 源契约预检 | Cursor Agent | **已完成** 2026-09-25 17:45 | 目录契约进入编排器。本地证据在 `runs/2026-09-25-source-contract/`（不入库）。未执行原料 SQL，未造批准人 |
 
 ## 5. 待办与优先级排序
 
@@ -158,11 +170,15 @@
 
 | 优先级 | 待办 | 负责人 | 依赖 |
 |---|---|---|---|
-| **P1** | **S0 骨架**：typed Port/registry + Playbook/Rule Pack 机器 manifest + Run/Error/Artifact 三维契约 + CLI `run`/`ask`/`playbooks` + 非月报 fixture + no-op（ADR-066～070） | Atlas | 规划已落 `docs/10-architecture.md`；实现就绪复核完成后才写 `harness/` 代码 |
-| **P1** | S1–S7 按架构 §11：认证 PlatformAdapter → canonical → MetricRegistry → 场景技能 → 封包后校验评估 → 动态平台报告 → LLM `ask` | Atlas | S0 |
-| **P1** | 能力层落地：`core/llm/`、`core/skills/` SK-01~08；MCP/Web/Schedule 仅保留 Port + no-op，不铺空目录 | Atlas | S0 |
-| **P1** | 接真实库（只读）分别认证 Shopify/TikTok adapter，并按每次显式 `target_platforms` 跑通端到端月报；TikTok Affiliate/LIVE 原生模块不进 canonical 合计 | Atlas | S1 起 |
-| **P1** | Reporter 实现：Markdown 主报告 + HTML 交互图表，产物入 `runs/<task>/report/` | Atlas | S6 |
+| **P1** | **S0–S2 会话层已收口**：状态机、记忆门禁、C2 前不执行、AST 与只读会话拒绝写入 | Cursor Agent | 2026-09-25 13:56。128 passed / 1 skipped，覆盖率 97.51%。复盘见 `docs/reviews/phase-review.md` |
+| **P1** | 当前登录不是只读账号（含 ALL PRIVILEGES）。R-104 三层尚未同时成立 | Cursor Agent | B-15。不在未授权时创建数据库用户 |
+| **P1** | 审批记录仍是占位指纹，没有 approver / approved_at。C2 占位不能当批准 | Cursor Agent | 架构 §16.4。本轮只堵住未批准执行 |
+| **P1** | **S1 源契约预检已完成**：只查 information_schema。未映射数 0，水位与行数为空，业务行 0 | Cursor Agent | 2026-09-25 17:45。130 passed / 1 skipped，覆盖率 95.72%。复盘见 `docs/reviews/phase-review.md` |
+| **P1** | 人工 C2：对某一版已归档 SQL 指纹明确批准后，才允许只读会话执行该语句 | 用户 | 本轮没有 approver / approved_at。B-15 继续打开 |
+| **P1** | S3–S7 骨架：指标、Skill、封包、大纲渲染、无密钥 ask。未接编排器，未出月报 | Cursor Agent | 见 `0f30f98`。上一门没有业务快照证据，这些门不开工 |
+| **P1** | 能力层：MCP/Web/Schedule/Session/向量只返回 NoOp，不建存储后端 | Cursor Agent | `harness/core/noop.py`；启用须另立 ADR |
+| **P1** | 业务快照：只取已批准语句的聚合或水位。合成样本仍不是真实快照 | Cursor Agent | 目录预检已完成；原料 SQL 未执行。B-15 仍开 |
+| **P1** | Reporter：Markdown 与 HTML 按 `plan.outline` 渲染 | Cursor Agent | 本地渲染已在 `0f30f98`；未对真实月报跑出报告 |
 | **P1** | 新老客分层（M501–M507）接入月报 | Atlas | S4 |
 | P2 | 大促日历（`promo_calendar.events`）—— 用户 2026-09-22 确认**暂不提供**；`enabled=false`，`missing_behavior=annotate_not_block`（ADR-054 / R-70）。补日历后打开 `enabled` | 用户 | 需要时再补 |
 | **P1** | 每个里程碑执行一次冗余巡检（守则 9），清理清单需确认后再删 | Atlas | 里程碑节点 |
@@ -178,6 +194,7 @@
 | B-03 | ~~报告输出格式未定~~ **已解决 2026-09-22（归档留痕）** | 曾阻塞 Reporter 与 `runs/` 产物结构收敛 | 已由 ADR-008 关闭 |
 | B-04 | 知识库无跨境电商指标与口径资产（仅国内电商 / 共享出行场景） | 领域知识必须自建或外部补 | 已定位 |
 | B-14 | TikTok 已归档的 GMV/Affiliate/LIVE 官方页面主要标注适用美国站，而真实数据还含 GB/DE/ES/FR/IT | 非美国站 platform-native 指标在对应地区官方定义核验前只能标“已登记未启用”；不阻塞 canonical 订单/退款映射 | 已定位（地区版本差异，S4 启用前补证据） |
+| B-15 | 当前数据库登录含 ALL PRIVILEGES，不是独立只读账号 | Harness 连接建立时即只读，写语句与「改回可写」都会被拒绝；其他客户端用同一登录仍可写入。不收回该账号权限，也不打开全局只读 | 已定位。2026-09-25 会话写入错误号 1792，业务行 0 |
 | ~~B-05~~ | ~~无法获取 MySQL 表结构~~ **已解决 2026-09-22（归档留痕）** | 曾阻塞字段映射登记 | 凭据到位后直连核实，§5.3 已登记实测字段 |
 | ~~B-07~~ | ~~net_sales 回溯扣退款冲突~~ **已解决 2026-09-22（归档留痕）** | 曾决定 M102 基准字段 | ADR-019：M102 = gross+discounts，退款按 `refund_created_at` 发生月冲减 |
 | ~~B-08~~ | ~~目标表维度与单位~~ **已解决 2026-09-22（归档留痕）** | ADR-016 需按实际修订 | ADR-020：维度=年月×站点（无品类），**CNY 万元**，×10000 显式换算（R-22） |
@@ -285,6 +302,8 @@
 | ADR-068 | 2026-09-24 | **跨平台 canonical 内核 + TikTok 首阶段真实接入**：规则/指标/评估分层；逐源证据、运行状态、PII 与完整度契约 | 同上 |
 | ADR-069 | 2026-09-24 | **动态平台与生产门禁契约收口**：显式目标平台、核心/可选能力、报告等级、readiness、封包/C3 指纹、Profile/Adapter 组件认证 | 同上 |
 | ADR-070 | 2026-09-24 | **S0 实现就绪契约校正**：统一 manifest 字段、C1/C2/快照顺序、状态暂停态、M104/M106 能力门禁、ErrorEnvelope/E-NNNN、审批指纹与依赖边界 | 同上 |
+| ADR-071 | 2026-09-24 | **公开仓库与数据安全边界**：凭据零入库、数据库三层防写、数据最小化与出境默认拒绝 | 同上 |
+| ADR-072 | 2026-09-25 | **辩证判断与单份阶段复盘**：一次反问不推翻已有工程判断；复盘只追加一份；真实库探测不入库 | `docs/reviews/phase-review.md` |
 
 ## 8. 附：文档更新日志
 
@@ -362,3 +381,16 @@
 | 2026-09-24 18:36 | Atlas | GitHub 远端接入完成：新增 `origin`，首次推送 `master` 并建立 upstream；项目已具备 Cursor Cloud Agent 的 Git 基线 |
 | 2026-09-24 18:50 | Atlas | 开始 S0 开工前实现就绪复核：先修正 Playbook capability 字段名与 E-NNNN 归档条件，再执行跨 SSOT/机器契约一致性审查与回归验证 |
 | 2026-09-24 19:02 | Atlas | **S0 实现就绪复核完成**：追加 ADR-070；统一机器字段、DAG/C1/C2/快照顺序、状态暂停态、M104/M106 门禁、Eval overlay、ErrorEnvelope/E-NNNN、审批指纹、依赖与 no-op；独立终审仅剩字段别名后已修正为 `rendered_sql_hash` |
+| 2026-09-24 20:27 | Cursor Agent | 开始执行 Harness 产品化计划：创建 `feat/harness-productization` 隔离工作树；G0 先完成公开仓库边界 ADR、全历史密钥扫描、分支/CI/审查与数据安全准入，再按 S0 切片测试先行实施 |
+| 2026-09-24 20:29 | Cursor Agent | G0 本地门禁通过：gitleaks 8.30.1 扫描全部 6 个提交、555.34 KB、0 findings；`.env` 已忽略/未跟踪/历史 0 次。追加 ADR-071 与 R-103～R-105；建立 Python 3.13.12、uv 0.12.18、锁文件、最小包、CI、PR 模板、CODEOWNERS；GitHub 分支保护待首个 CI check 出现且需认证后配置 |
+| 2026-09-24 23:22 | Cursor Agent | 关闭 S0-02 剩余审查发现：分支提交走状态机、拒绝 Windows 设备名与重解析点、schema 兼容对照 HEAD。全量测试与 Ruff/mypy 通过；S0-03 尚未开始 |
+| 2026-09-25 00:45 | Cursor Agent | S0-02 准出补齐：发布 schema 对照 origin/master，边界覆盖率达标，移除不存在的 CLI 入口，更正第 5 节过期表述 |
+| 2026-09-25 01:13 | Cursor Agent | 本地落地 S0-03 至 S7：`0687a0f`、`0f30f98`、`cba57d1`。119 passed / 1 skipped，覆盖率 98.42%。守则 9 清单：无第二份进度文档，未删文件；真实库零写入与 GitHub PR/分支保护未验证，故不关闭这两项 |
+| 2026-09-25 10:09 | Cursor Agent | 推送 `feat/harness-productization` 并打开 PR #1。`master` 保护：必须经 PR、必需检查为 Python 3.13 ubuntu/windows、Security gates、Secret scan、Semgrep，禁止 force-push，管理员不可绕过。未合并。Bandit 的 assert 与 git 调用已改为显式校验 |
+| 2026-09-25 10:14 | Cursor Agent | `37ee784` 的 CI run 36085282875 五门全绿（含 Semgrep 与 Security gates）。`master` 保护已生效，PR #1 未合并 |
+| 2026-09-25 11:20 | Cursor Agent | 开始 S0–S2 地基补实：不扩展 S3–S7，不连接生产库 |
+| 2026-09-25 12:04 | Cursor Agent | S0–S2 可验证地基补完并更正 01:13 的完成范围。真实库零写入与完整审批记录仍开。127 passed / 1 skipped，覆盖率 98.32% |
+| 2026-09-25 13:01 | Cursor Agent | 开始 S0–S2 收尾：追加守则 0.6（ADR-072），本地证明真实库零写入，复盘并入单份报告 |
+| 2026-09-25 13:56 | Cursor Agent | 会话零写入已证明（错误号 1792，业务行 0）；只读账号层不成立，记为 B-15。删除两份 workbuddy 旧稿和退出复盘 canvas。128 passed / 1 skipped，覆盖率 97.51% |
+| 2026-09-25 14:35 | Cursor Agent | 用现有登录把 harness 连接固定为只读会话，并拒绝把会话改回可写。不收回账号权限，不打开全局只读。再次探测错误号 1792，业务行 0 |
+| 2026-09-25 17:45 | Cursor Agent | S1 源契约预检：目录查询进入编排器，核心不连库。本地探测业务行 0，未映射数 0。130 passed / 1 skipped，覆盖率 95.72%。B-15 与空批准记录仍开 |

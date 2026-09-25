@@ -1,5 +1,5 @@
 # 唯一职责：提供 Rule Pack 到 rules.md 规则编号的机器可读索引。
-# 版本：v1.0
+# 版本：v1.1
 # 最后更新：2026-09-24
 # 状态：生效（规则正文仍以 rules.md 为唯一来源）
 
@@ -41,6 +41,9 @@ packs:
       - R-100
       - R-101
       - R-102
+      - R-103
+      - R-104
+      - R-105
 
   domain:ecommerce:
     scope: domain

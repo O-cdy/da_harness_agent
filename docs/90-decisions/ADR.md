@@ -2,7 +2,7 @@
 
 > 唯一职责：记录架构与口径决策（ADR）。本文件是**决策全文的唯一来源**，`PROJECT_STATUS.md` 第 7 节只放索引表，不复制正文。
 > 规则：新决策追加在末尾，编号递增；已有决策**不得修改或删除**，需要变更时新增一条修订型 ADR。
-> 版本 v0.1（ADR-001 ~ ADR-068） | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效（只增不改）**
+> 版本 v0.1（ADR-001 ~ ADR-071） | 建立：2026-09-22 | 最后更新：2026-09-24 | 状态：**生效（只增不改）**
 
 ---
 
@@ -1435,3 +1435,39 @@ USD 单币种：46,257,435 / 2,182,040 → 4.72%
 **修订关系**：只澄清 ADR-010/066～069 的实现契约；不改变业务口径与平台范围。
 
 **影响**：`10-architecture.md`、`metrics.md`、playbooks、skills、`rules.md`、`eval-rubric.md`、`data-sources.md`、`profile.yaml`、`PROJECT_STATUS.md`。本条不写 `harness/` 业务代码。
+
+---
+
+## ADR-071 · 2026-09-24 · 公开仓库与数据安全边界
+
+**背景**：用户确认 `O-cdy/da_harness_agent` 继续保持公开，并接受当前业务文档范围公开。公开仓库不能承载数据库凭据、原始业务行、PII 或可还原连接信息；仅依赖 `.gitignore`、应用层 SQL 检查或日志约定都不足以形成产品级防线。
+
+**决策**：
+1. 仓库保持公开，当前已提交的业务口径、平台表名和数据源说明视为可公开；未来新增基础设施端点和业务元数据仍按最小披露处理。
+2. 凭据只允许由环境变量或受控 Secret Store 注入。真实 `.env`、完整 DSN、Token、Cookie、私钥和可还原凭据禁止进入 Git、PR、Issue、CI artifact、trace、报告与开发日志。
+3. 开发准入必须对工作树、暂存区和完整 Git 历史执行固定版本的脱敏 secret scan；发现泄露先撤销/轮换与审计，再清理历史。删除文件或提交不能替代轮换。
+4. 数据库采用独立只读账号、驱动只读会话和 SQL AST 三层防写；生产验证只在本地显式触发，GitHub Actions 与云端 Agent 禁止连接生产数据库。
+5. Adapter 执行字段 allowlist、PII 删除/不可逆假名化和数据最小化。原始结果默认不落盘；Artifact 必须分级，`restricted` 禁止进入外部 Provider、GitHub artifact 与正式报告。
+6. 网络、LLM、MCP 和外部 Provider 默认拒绝数据出境；仅允许经 capability allowlist 授权的聚合、脱敏、最小充分字段。无 Key 或无授权必须结构化 NoOp，禁止改走其它通路。
+7. 日志、异常、ErrorEnvelope、trace、repr、快照和报告统一经过结构化脱敏；文件入口必须防路径穿越、超限输入、恶意 YAML 与 CSV/Excel 公式注入。
+8. 安全事件先进入 ErrorEnvelope；只有可复发的新根因家族、架构缺陷或需要防回归门禁时新增 E-NNNN。
+
+**被否决**：因仓库公开而允许提交凭据或原始数据；只靠 `.gitignore`；只靠应用 SQL 过滤而给数据库账号写权限；默认把查询结果发给 LLM/MCP；在 CI 中连接生产库。
+
+**影响**：`docs/10-architecture.md` §17、`docs/30-constraints/rules.md` R-103～R-105、`rule-packs.yaml`、`.gitignore`、`.env.example`、CI/PR 门禁与 `PROJECT_STATUS.md`。不改变既有业务指标口径。
+
+---
+
+## ADR-072 · 2026-09-25 · 辩证判断与单份阶段复盘
+
+**背景**：用户要求在开发守则中写明，用户说法不是自动金标；规划与落地要保持辩证，不能因为被反问一次就改判。同时要求真实库零写入证明、S0–S2 收尾，以及删除分散的复盘稿，只在一份报告里按阶段追加。既有守则 0.4 规定业务口径必须用户确认，守则 1 规定进度只有 `PROJECT_STATUS.md`。这两条如果被「用户说的不算数」或「再写一份进度」盖掉，会直接复发 E-0006。
+
+**决策**：
+1. `AGENTS.md` 增加守则 0.6。用户陈述是需求与待核验证据。工程判断对照数据分析 harness 的通行做法和已生效 ADR。一次反问不推翻已有证据支撑的判断；冲突要写清。业务口径仍只由用户确认。
+2. 阶段性复盘只允许 `docs/reviews/phase-review.md`，按阶段追加。进度状态仍只写 `PROJECT_STATUS.md`，复盘不复制口径正文，不替代 ADR。
+3. 真实库零写入只在本地显式运行，不进入 pytest 或 CI。证据写在 git 忽略的 `runs/`。对外复盘只保留脱敏结论：三层是否同时成立、服务端错误号、是否读到业务行。不记录凭据、DSN、授权原文或业务行。
+4. 审批记录里的 approver / approved_at 继续空着。不造一个批准人来宣称 S2 的人工卡点已关闭。
+
+**被否决**：把用户每一句都写成新的金标；用「行业标准」改业务口径；为了收尾伪造 C2 批准；把复盘正文复制进 `PROJECT_STATUS.md`；再新建第二份复盘或阶段总结。
+
+**影响**：`AGENTS.md`、`.cursor/rules/00-constitution.mdc`（只加指针）、`docs/reviews/phase-review.md`、`PROJECT_STATUS.md`。不改变指标口径。

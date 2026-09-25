@@ -1,0 +1,50 @@
+schema_version: 1
+id: echo
+contract_version: "1.0"
+platform_selection:
+  mode: explicit
+  min_targets: 1
+core_capabilities:
+  - orders
+optional_capabilities:
+  - affiliate
+steps:
+  - step_id: align
+    type: branch
+    depends_on: []
+    platform_scope: []
+    input_fingerprint: sha256:align
+    on_unsupported: await_alignment
+  - step_id: continue
+    type: branch
+    depends_on: []
+    platform_scope: []
+    input_fingerprint: sha256:continue
+metric_refs:
+  canonical: []
+  optional: []
+metric_availability: {}
+skill_refs: []
+rule_packs:
+  fixed:
+    - core
+  per_target_platform: "platform:{platform_id}"
+time_scope:
+  calendar: natural_month
+  timezone: UTC
+source_readiness:
+  require_core_source_watermarks: false
+unsupported_policy:
+  core: await_alignment
+  optional: skip_optional
+report_policy:
+  tiers:
+    - dry_run
+outline:
+  - id: echo-summary
+    title: Echo summary
+approval_policy:
+  c1: required
+  c2: required
+  c3: required
+eval_overlays: []

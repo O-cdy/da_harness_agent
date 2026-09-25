@@ -1,0 +1,102 @@
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13"]
+build-backend = "uv_build"
+
+[project]
+name = "da-harness-agent"
+version = "0.1.0"
+description = "A policy-governed, reproducible data-analysis agent harness."
+requires-python = "==3.13.*"
+dependencies = [
+  "httpx>=0.28,<1",
+  "jinja2>=3.1,<4",
+  "openpyxl>=3.1,<4",
+  "pydantic>=2.11,<3",
+  "pymysql>=1.1,<2",
+  "pyyaml>=6,<7",
+  "sqlalchemy>=2.0,<3",
+  "sqlglot>=27,<29",
+  "typer>=0.16,<1",
+]
+
+[project.scripts]
+harness = "harness.cli.app:app"
+
+[dependency-groups]
+dev = [
+  "build>=1.2,<2",
+  "hypothesis>=6.130,<7",
+  "import-linter>=2.3,<3",
+  "mypy>=1.15,<2",
+  "pytest>=9.0.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.11,<1",
+  "types-pyyaml>=6.0,<7",
+]
+security = [
+  "bandit[toml]>=1.8,<2",
+  "cyclonedx-bom>=6,<8",
+  "pip-audit>=2.8,<3",
+]
+
+[tool.uv.build-backend]
+module-name = "harness"
+module-root = ""
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --cov=harness --cov-report=term-missing --cov-fail-under=85"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["harness"]
+omit = ["harness/execution/live_probe.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+exclude = [".venv", "build", "dist", "runs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "S", "RUF"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+
+[tool.importlinter]
+root_packages = ["harness"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Core must not depend on CLI"
+type = "forbidden"
+source_modules = ["harness.core"]
+forbidden_modules = ["harness.cli"]
+
+[[tool.importlinter.contracts]]
+name = "Core must not import concrete implementations"
+type = "forbidden"
+source_modules = ["harness.core"]
+forbidden_modules = [
+  "harness.adapters",
+  "harness.metrics",
+  "harness.skills",
+  "harness.execution",
+  "harness.reporting",
+  "harness.llm",
+  "harness.cli",
+]
