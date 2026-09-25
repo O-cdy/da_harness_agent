@@ -1,3 +1,4 @@
+import json
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -6,7 +7,12 @@ import pytest
 from harness.core.memory import MemoryError, assemble
 from harness.core.orchestrator import OrchestratorError, run_playbook
 from harness.core.policy import Policy, PolicyError
-from harness.execution.reader import SqlGuardError, assert_read_only_grants, run_read_only
+from harness.execution.reader import (
+    SqlGuardError,
+    assert_read_only_grants,
+    prove_zero_write,
+    run_read_only,
+)
 from harness.execution.sql_guard import guard_sql
 from harness.runtime import review_statement
 
@@ -120,6 +126,71 @@ def test_read_only_session_rejects_missing_login_and_write_grants() -> None:
         guard_sql(
             "UPDATE orders SET item_gross_amount = 1", playbook=False, allowed_objects={ORDERS}
         )
+
+
+def test_zero_write_probe_keeps_grant_text_out_of_the_result() -> None:
+    class _Probe:
+        def __init__(self, grants: list[str], *, accept: bool = False) -> None:
+            self.grants = grants
+            self.accept = accept
+            self.statements: list[str] = []
+            self.closed = False
+
+        def execute(self, statement: str) -> list[tuple[object, ...]]:
+            self.statements.append(statement)
+            if statement.startswith("SELECT @@SESSION"):
+                return [(1,)]
+            if statement.startswith("SHOW GRANTS"):
+                return [(grant,) for grant in self.grants]
+            if statement.startswith("INSERT") and not self.accept:
+                raise RuntimeError(1792, "server detail hidden")
+            if statement.startswith("CREATE TEMPORARY") and not self.accept:
+                raise RuntimeError(1792, "server detail hidden")
+            return []
+
+        def close(self) -> None:
+            self.closed = True
+
+    login = {"MYSQL_HOST": "127.0.0.1", "MYSQL_USER": "reader", "MYSQL_PASSWORD": "placeholder"}
+    session = _Probe(["GRANT SELECT ON demo.* TO 'reader'@'%'"])
+    result = prove_zero_write(login, connect=lambda _env: session)
+    encoded = json.dumps(result)
+    assert result["three_layers_hold"] is True
+    assert result["business_rows_read"] == 0
+    assert "ROLLBACK" in session.statements
+    assert session.closed is True
+    assert "reader" not in encoded
+    assert "demo" not in encoded
+    writer = _Probe(["GRANT SELECT, INSERT ON demo.* TO 'writer'@'%'"])
+    denied = prove_zero_write(login, connect=lambda _env: writer)
+    assert denied["three_layers_hold"] is False
+    assert denied["read_only_account"] is False
+    assert denied["write_verbs"] == ["INSERT"]
+    assert "writer" not in json.dumps(denied)
+    inconclusive = _Probe(["GRANT SELECT ON demo.* TO 'reader'@'%'"])
+
+    def _execute(statement: str) -> list[tuple[object, ...]]:
+        inconclusive.statements.append(statement)
+        if statement.startswith("SELECT @@SESSION"):
+            return [(1,)]
+        if statement.startswith("SHOW GRANTS"):
+            return [(grant,) for grant in inconclusive.grants]
+        if statement.startswith("INSERT"):
+            raise RuntimeError(1046, "hidden")
+        if statement.startswith("SHOW DATABASES"):
+            return [("appdb",)]
+        if statement.startswith("USE"):
+            return []
+        if statement.startswith("CREATE TEMPORARY"):
+            raise RuntimeError(1792, "hidden")
+        return []
+
+    inconclusive.execute = _execute  # type: ignore[method-assign]
+    recovered = prove_zero_write(login, connect=lambda _env: inconclusive)
+    assert recovered["write_errno"] == 1792
+    assert recovered["session_blocked_write"] is True
+    assert recovered["write_accepted"] is False
+    assert "appdb" not in json.dumps(recovered)
 
 
 def test_policy_hook_runs_before_and_blocks_network() -> None:

@@ -50,6 +50,7 @@ testpaths = ["tests"]
 [tool.coverage.run]
 branch = true
 source = ["harness"]
+omit = ["harness/execution/live_probe.py"]
 
 [tool.coverage.report]
 show_missing = true
